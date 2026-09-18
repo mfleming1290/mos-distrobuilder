@@ -1,0 +1,224 @@
+image:
+  distribution: debian
+  release: trixie
+  architecture: amd64
+  description: Generic SteamCMD Game Server LXC Base
+
+source:
+  downloader: debootstrap
+  url: http://deb.debian.org/debian
+
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+
+  sets:
+    - action: install
+      packages:
+        # Base system
+        - systemd
+        - systemd-sysv
+        - sudo
+        - ca-certificates
+        - locales
+        - tzdata
+
+        # Network / diagnostics
+        - curl
+        - wget
+        - procps
+        - iproute2
+        - iputils-ping
+        - dnsutils
+        - net-tools
+        - lsof
+
+        # General tooling
+        - jq
+        - file
+        - rsync
+        - tar
+        - xz-utils
+        - gzip
+        - bzip2
+        - unzip
+        - nano
+        - less
+
+        # Common 64-bit runtime dependencies
+        - libc6
+        - libgcc-s1
+        - libstdc++6
+
+files:
+  # Generic location for workload/game-specific configuration.
+  - path: /etc/gameserver
+    generator: dump
+    type: directory
+    mode: 0755
+
+  # One-game-per-LXC mount point.
+  # In MOS, bind-mount the existing host game directory here, e.g.:
+  #   host:  /mnt/user/@home/matt/servers/dragonwilds
+  #   guest: /srv/gameserver
+  - path: /srv/gameserver
+    generator: dump
+    type: directory
+    mode: 0755
+
+  # SteamCMD installation.
+  - path: /opt/steamcmd
+    generator: dump
+    type: directory
+    mode: 0755
+
+actions:
+  - trigger: post-packages
+    action: |
+      #!/bin/sh
+      set -eux
+
+      # ------------------------------------------------------------
+      # Locale
+      # ------------------------------------------------------------
+
+      if ! grep -q '^en_US.UTF-8 UTF-8$' /etc/locale.gen; then
+        echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+      fi
+
+      locale-gen
+      update-locale LANG=en_US.UTF-8
+
+      # ------------------------------------------------------------
+      # Steam / game-server user
+      #
+      # Existing MOS-mounted game directories are owned by host
+      # UID/GID 1000. For the first migration test, create the guest
+      # Steam user with the same UID/GID so a privileged LXC sees the
+      # bind-mounted files with matching ownership.
+      # ------------------------------------------------------------
+
+      if ! getent group 1000 >/dev/null 2>&1; then
+        groupadd --gid 1000 steam
+      elif ! getent group steam >/dev/null 2>&1; then
+        existing_group="$(getent group 1000 | cut -d: -f1)"
+        groupmod --new-name steam "$existing_group"
+      fi
+
+      if ! id steam >/dev/null 2>&1; then
+        useradd \
+          --uid 1000 \
+          --gid 1000 \
+          --create-home \
+          --shell /bin/bash \
+          steam
+      fi
+
+      # ------------------------------------------------------------
+      # Enable i386 runtime support
+      # ------------------------------------------------------------
+
+      dpkg --add-architecture i386
+      apt-get update
+
+      apt-get install -y \
+        lib32gcc-s1 \
+        lib32stdc++6 \
+        libc6-i386
+
+      # ------------------------------------------------------------
+      # Directory ownership
+      # ------------------------------------------------------------
+
+      chown -R steam:steam \
+        /opt/steamcmd \
+        /srv/gameserver \
+        /etc/gameserver
+
+      # ------------------------------------------------------------
+      # Install SteamCMD
+      # ------------------------------------------------------------
+
+      cd /opt/steamcmd
+
+      curl -fsSL \
+        'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' \
+        -o steamcmd_linux.tar.gz
+
+      tar -xzf steamcmd_linux.tar.gz
+      rm steamcmd_linux.tar.gz
+
+      chown -R steam:steam /opt/steamcmd
+
+      # Convenient command path.
+      ln -sf /opt/steamcmd/steamcmd.sh /usr/local/bin/steamcmd
+
+      # ------------------------------------------------------------
+      # Warm SteamCMD once.
+      #
+      # SteamCMD can update/re-exec itself on first launch. Doing this
+      # in the image leaves newly-created LXCs ready to use immediately.
+      # ------------------------------------------------------------
+
+      su -s /bin/bash steam -c \
+        '/opt/steamcmd/steamcmd.sh +login anonymous +quit'
+
+      # ------------------------------------------------------------
+      # Steam SDK compatibility paths
+      # ------------------------------------------------------------
+
+      STEAM_HOME="$(getent passwd steam | cut -d: -f6)"
+
+      mkdir -p \
+        "$STEAM_HOME/.steam/sdk32" \
+        "$STEAM_HOME/.steam/sdk64"
+
+      if [ -f /opt/steamcmd/linux32/steamclient.so ]; then
+        ln -sf \
+          /opt/steamcmd/linux32/steamclient.so \
+          "$STEAM_HOME/.steam/sdk32/steamclient.so"
+      fi
+
+      if [ -f /opt/steamcmd/linux64/steamclient.so ]; then
+        ln -sf \
+          /opt/steamcmd/linux64/steamclient.so \
+          "$STEAM_HOME/.steam/sdk64/steamclient.so"
+      fi
+
+      chown -R steam:steam "$STEAM_HOME/.steam"
+
+      # ------------------------------------------------------------
+      # Final cleanup
+      # ------------------------------------------------------------
+
+      apt-get clean
+      rm -rf /var/lib/apt/lists/*
+
+targets:
+  lxc:
+    create_message: |-
+      Generic SteamCMD game-server LXC created.
+
+      Base image provides:
+        - Debian Trixie amd64
+        - systemd
+        - steam user (UID/GID 1000)
+        - SteamCMD
+        - i386 compatibility
+        - common Steam runtime libraries
+        - Steam SDK compatibility paths
+        - /etc/gameserver
+        - /srv/gameserver
+        - /opt/steamcmd
+        - steamcmd available in PATH
+
+      Intended topology:
+        - one game server per LXC
+        - existing game files bind-mounted at /srv/gameserver
+        - game-specific service/configuration added after creation
+
+      For the initial MOS migration test, create the LXC as privileged
+      when mounting host directories owned by UID/GID 1000.
+
+      No game is installed or configured by this base image.

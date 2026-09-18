@@ -1,0 +1,82 @@
+#!/bin/bash
+
+PLUGIN_NAME="distrobuilder"
+PLG_DIR="/boot/optional/plugins/${PLUGIN_NAME}"
+STATIC_DIR="${PLG_DIR}/staticfiles"
+DEFINITION_DIR="${STATIC_DIR}/definitions"
+BUILD_DIR="${PLG_DIR}/builds"
+LOG_DIR="${PLG_DIR}/logs"
+CACHE_DIR="${PLG_DIR}/cache"
+DISTROBUILDER="/usr/bin/plugins/distrobuilder"
+
+_ensure_dirs() {
+  mkdir -p "$DEFINITION_DIR" "$BUILD_DIR" "$LOG_DIR" "$CACHE_DIR"
+}
+
+install() {
+  _ensure_dirs
+  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+}
+
+plugin_update() {
+  _ensure_dirs
+  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+}
+
+mos_start() {
+  _ensure_dirs
+}
+
+validate_gameserver() {
+  _ensure_dirs
+  local def="${DEFINITION_DIR}/gameserver.yaml"
+  local log="${LOG_DIR}/validate-gameserver.log"
+
+  if [ ! -f "$def" ]; then
+    echo "Definition not found: $def" | tee "$log" >&2
+    return 1
+  fi
+
+  "$DISTROBUILDER" validate "$def" 2>&1 | tee "$log"
+}
+
+build_gameserver() {
+  _ensure_dirs
+  local def="${DEFINITION_DIR}/gameserver.yaml"
+  local stamp
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  local out="${BUILD_DIR}/gameserver-${stamp}"
+  local log="${LOG_DIR}/build-gameserver-${stamp}.log"
+
+  if [ ! -f "$def" ]; then
+    echo "Definition not found: $def" | tee "$log" >&2
+    return 1
+  fi
+
+  mkdir -p "$out"
+  echo "Building GameServer LXC image" | tee "$log"
+  echo "Definition: $def" | tee -a "$log"
+  echo "Output:     $out" | tee -a "$log"
+
+  "$DISTROBUILDER" \
+    --cache-dir "$CACHE_DIR" \
+    build-lxc "$def" "$out" \
+    --compression=xz \
+    2>&1 | tee -a "$log"
+
+  ln -sfn "$out" "${BUILD_DIR}/latest-gameserver"
+  cp -f "$log" "${LOG_DIR}/latest-build.log"
+
+  echo "Build completed: $out" | tee -a "$log"
+  ls -lah "$out" | tee -a "$log"
+}
+
+clean_cache() {
+  rm -rf "$CACHE_DIR"
+  mkdir -p "$CACHE_DIR"
+}
+
+clean_builds() {
+  rm -rf "$BUILD_DIR"
+  mkdir -p "$BUILD_DIR"
+}

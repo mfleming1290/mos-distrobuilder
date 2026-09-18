@@ -1,0 +1,7 @@
+# Runtime dependencies used by distrobuilder for Debian/LXC image builds.
+debootstrap
+rsync
+gpg
+xz-utils
+tar
+ca-certificates
