@@ -1,0 +1,323 @@
+# =============================================================================
+# Repository defaults
+# Broad starter ignore file for Windows/macOS/Linux development.
+# Keep project-specific additions below this file's sections when needed.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Secrets, environment files, and local credentials
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.defaults
+
+*.local
+*.secret
+*.secrets
+secrets/
+.secret/
+
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Local auth/tool credentials
+.auth/
+.credentials/
+
+# -----------------------------------------------------------------------------
+# Operating systems
+# -----------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -----------------------------------------------------------------------------
+# Editors and IDEs
+# -----------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# -----------------------------------------------------------------------------
+# Logs, temporary files, caches, and test output
+# -----------------------------------------------------------------------------
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.cache
+.cache/
+.tmp/
+tmp/
+temp/
+
+coverage/
+.nyc_output/
+coverage-final.json
+lcov.info
+
+# -----------------------------------------------------------------------------
+# JavaScript / TypeScript / Node / Bun / Deno
+# -----------------------------------------------------------------------------
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# Build-system caches
+.turbo/
+.nx/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.swc/
+.rollup.cache/
+
+# Framework and bundler output
+.next/
+.nuxt/
+.output/
+.svelte-kit/
+.astro/
+.vite/
+.vite-inspect/
+
+# Generic web build output
+dist/
+build/
+out/
+
+# TypeScript incremental state
+*.tsbuildinfo
+
+# Local runtime state
+.vercel/
+.netlify/
+
+# Deno local cache (when explicitly configured in-project)
+.deno/
+
+# -----------------------------------------------------------------------------
+# Astro / React / Vue / Vite / Nuxt
+# -----------------------------------------------------------------------------
+# Most generated files are covered above. Keep source-generated type files that
+# your framework expects to commit unless the project documents otherwise.
+
+# -----------------------------------------------------------------------------
+# Rust / Cargo / Tauri 2
+# -----------------------------------------------------------------------------
+target/
+**/target/
+
+# Cargo.lock is intentionally NOT ignored.
+# Applications (including Tauri apps) should normally commit it.
+
+# Tauri generated bundles and local signing material
+src-tauri/gen/schemas/
+*.AppImage
+*.msi
+*.msix
+*.dmg
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.tox/
+.nox/
+.hypothesis/
+
+htmlcov/
+.coverage
+.coverage.*
+
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# -----------------------------------------------------------------------------
+# Go
+# -----------------------------------------------------------------------------
+*.test
+*.out
+go.work.sum
+
+# -----------------------------------------------------------------------------
+# .NET / C#
+# -----------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+artifacts/
+TestResults/
+*.userprefs
+*.csproj.user
+*.sln.cache
+
+# -----------------------------------------------------------------------------
+# Java / Kotlin / Gradle / Maven
+# -----------------------------------------------------------------------------
+.gradle/
+**/.gradle/
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven/Gradle build directories are already covered by target/ and build/.
+
+# -----------------------------------------------------------------------------
+# PHP / Composer / Laravel
+# -----------------------------------------------------------------------------
+vendor/
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpactor.json
+
+storage/*.key
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*.php
+!bootstrap/cache/.gitignore
+
+# -----------------------------------------------------------------------------
+# Ruby
+# -----------------------------------------------------------------------------
+.bundle/
+vendor/bundle/
+.ruby-version
+.byebug_history
+
+# -----------------------------------------------------------------------------
+# C / C++ / CMake
+# -----------------------------------------------------------------------------
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+cmake_install.cmake
+compile_commands.json
+Makefile.local
+
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+
+# -----------------------------------------------------------------------------
+# PowerShell
+# -----------------------------------------------------------------------------
+*.clixml
+*.ps1xml.user
+
+# -----------------------------------------------------------------------------
+# Docker, containers, and local service state
+# -----------------------------------------------------------------------------
+.docker/
+docker-data/
+docker-volumes/
+compose.override.yaml
+compose.override.yml
+
+# -----------------------------------------------------------------------------
+# Databases and local runtime files
+# -----------------------------------------------------------------------------
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.db-journal
+*.db-shm
+*.db-wal
+
+*.pid
+*.pid.lock
+*.sock
+
+# -----------------------------------------------------------------------------
+# Package archives and generated installers
+# -----------------------------------------------------------------------------
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+
+# -----------------------------------------------------------------------------
+# Local research application/source snapshots
+# -----------------------------------------------------------------------------
+# External apps and repositories copied or cloned for analysis. Project-owned
+# findings belong in /analysis/; small durable references belong in /docs/references/.
+/docs/research-apps/
+
+# -----------------------------------------------------------------------------
+# Local project overrides
+# -----------------------------------------------------------------------------
+.gitignore.local
