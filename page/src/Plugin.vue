@@ -7,7 +7,7 @@
       <div class="card-head">
         <div>
           <h2>Distrobuilder Runtime</h2>
-          <p class="muted">Runtime binary is stored persistently under <code>/boot/optional/plugins/distrobuilder/bin/</code>.</p>
+          <p class="muted">Runtime binary is stored persistently under <code>/boot/optional/plugins/distrobuilder/bin/</code> and deployed executable to <code>/usr/bin/distrobuilder-real</code>.</p>
         </div>
         <span :class="['status', binaryInstalled ? 'ok-pill' : 'warn-pill']">
           {{ binaryInstalled ? `Installed${binaryVersion ? ` · ${binaryVersion}` : ''}` : 'Not installed' }}

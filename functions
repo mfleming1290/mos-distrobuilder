@@ -7,7 +7,7 @@ DEFINITION_DIR="${STATIC_DIR}/definitions"
 BUILD_DIR="${PLG_DIR}/builds"
 LOG_DIR="${PLG_DIR}/logs"
 CACHE_DIR="${PLG_DIR}/cache"
-DISTROBUILDER="${PLG_DIR}/bin/distrobuilder"
+DISTROBUILDER="/usr/bin/distrobuilder-real"
 CONTROLLER="/usr/bin/plugins/distrobuilder"
 
 _ensure_dirs() {
@@ -31,14 +31,18 @@ plugin_update() {
   "$CONTROLLER" install_binary
 }
 
+uninstall() {
+  rm -f /usr/bin/distrobuilder-real
+}
+
 mos_start() {
   _ensure_dirs
-  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+  "$CONTROLLER" deploy_binary 2>/dev/null || true
 }
 
 mos_osupdate() {
   _ensure_dirs
-  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+  "$CONTROLLER" deploy_binary 2>/dev/null || true
 }
 
 validate_gameserver() {

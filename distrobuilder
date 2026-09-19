@@ -4,6 +4,7 @@ set -u
 PLG_DIR="/boot/optional/plugins/distrobuilder"
 BIN_DIR="$PLG_DIR/bin"
 BIN_FILE="$BIN_DIR/distrobuilder"
+RUNTIME_BIN="/usr/bin/distrobuilder-real"
 LOCAL_MANIFEST="$BIN_DIR/distrobuilder.json"
 MANIFEST_URL="https://raw.githubusercontent.com/mfleming1290/mos-plugin-binaries/main/distrobuilder/3.3.1/linux-amd64/distrobuilder.json"
 
@@ -67,33 +68,43 @@ install_binary() {
     fail "SHA-256 verification failed. Expected $expected_sha but got $actual_sha."
   fi
 
-  chmod 0755 "$binary_tmp"
   mv -f "$binary_tmp" "$BIN_FILE"
   cp -f "$manifest_tmp" "$LOCAL_MANIFEST"
-  chmod 0644 "$LOCAL_MANIFEST"
+
+  deploy_binary || fail "Failed to deploy Distrobuilder runtime into /usr/bin."
 
   echo "Installed Distrobuilder $version"
-  echo "Binary: $BIN_FILE"
+  echo "Persistent binary: $BIN_FILE"
+  echo "Runtime binary: $RUNTIME_BIN"
   echo "SHA-256: $actual_sha"
+}
+
+deploy_binary() {
+  [ -f "$BIN_FILE" ] || return 1
+  cp -f "$BIN_FILE" "$RUNTIME_BIN" || return 1
+  chmod 0755 "$RUNTIME_BIN" || return 1
 }
 
 status() {
   local installed=false version="" sha=""
-  if [ -x "$BIN_FILE" ]; then
+  if [ -x "$RUNTIME_BIN" ]; then
     installed=true
-    sha="$(sha256sum "$BIN_FILE" 2>/dev/null | awk '{print $1}')"
+    sha="$(sha256sum "$RUNTIME_BIN" 2>/dev/null | awk '{print $1}')"
   fi
   if [ -f "$LOCAL_MANIFEST" ]; then
     version="$(jq -r '.version // empty' "$LOCAL_MANIFEST" 2>/dev/null)"
   fi
 
-  printf '{"installed":%s,"version":"%s","sha256":"%s","path":"%s"}\n' \
-    "$installed" "$version" "$sha" "$BIN_FILE"
+  printf '{"installed":%s,"version":"%s","sha256":"%s","path":"%s","persistent_path":"%s"}\n' \
+    "$installed" "$version" "$sha" "$RUNTIME_BIN" "$BIN_FILE"
 }
 
 case "${1:-}" in
   install_binary|repair_binary)
     install_binary
+    ;;
+  deploy_binary)
+    deploy_binary
     ;;
   status)
     status
