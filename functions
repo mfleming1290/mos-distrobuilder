@@ -1,34 +1,92 @@
 #!/bin/bash
 
 PLUGIN_NAME="distrobuilder"
-PLG_DIR="/boot/optional/plugins/${PLUGIN_NAME}"
-STATIC_DIR="${PLG_DIR}/staticfiles"
-DEFINITION_DIR="${STATIC_DIR}/definitions"
-BUILD_DIR="${PLG_DIR}/builds"
-LOG_DIR="${PLG_DIR}/logs"
-CACHE_DIR="${PLG_DIR}/cache"
+PLG_DIR="/boot/optional/plugins/$PLUGIN_NAME"
+SETTINGS_FILE="$PLG_DIR/settings.json"
+STATIC_DIR="$PLG_DIR/staticfiles"
+DEFAULT_DEFINITION="$STATIC_DIR/definitions/gameserver.yaml"
 DISTROBUILDER="/usr/bin/distrobuilder-real"
 CONTROLLER="/usr/bin/plugins/distrobuilder"
 
+TEMPLATE_DIR=""
+BUILD_DIR=""
+LOG_DIR=""
+CACHE_DIR=""
+SELECTED_TEMPLATE=""
+
+_ensure_settings() {
+  if [ ! -f "$SETTINGS_FILE" ]; then
+    mkdir -p "$PLG_DIR"
+    cat > "$SETTINGS_FILE" <<'JSON'
+{
+  "template_dir": "/mnt/user/@storage/distrobuilder/templates",
+  "build_dir": "/mnt/user/@storage/distrobuilder/builds",
+  "cache_dir": "/mnt/user/@storage/distrobuilder/cache",
+  "log_dir": "/mnt/user/@storage/distrobuilder/logs",
+  "selected_template": ""
+}
+JSON
+  fi
+}
+
+_load_settings() {
+  _ensure_settings
+  TEMPLATE_DIR="$(jq -r '.template_dir // empty' "$SETTINGS_FILE" 2>/dev/null)"
+  BUILD_DIR="$(jq -r '.build_dir // empty' "$SETTINGS_FILE" 2>/dev/null)"
+  CACHE_DIR="$(jq -r '.cache_dir // empty' "$SETTINGS_FILE" 2>/dev/null)"
+  LOG_DIR="$(jq -r '.log_dir // empty' "$SETTINGS_FILE" 2>/dev/null)"
+  SELECTED_TEMPLATE="$(jq -r '.selected_template // empty' "$SETTINGS_FILE" 2>/dev/null)"
+}
+
 _ensure_dirs() {
-  mkdir -p "$DEFINITION_DIR" "$BUILD_DIR" "$LOG_DIR" "$CACHE_DIR" "${PLG_DIR}/bin"
+  _load_settings
+  [ -n "$TEMPLATE_DIR" ] || { echo "Template folder is not configured." >&2; return 1; }
+  [ -n "$BUILD_DIR" ] || { echo "Build folder is not configured." >&2; return 1; }
+  [ -n "$CACHE_DIR" ] || { echo "Cache folder is not configured." >&2; return 1; }
+  [ -n "$LOG_DIR" ] || { echo "Log folder is not configured." >&2; return 1; }
+  mkdir -p "$TEMPLATE_DIR" "$BUILD_DIR" "$LOG_DIR" "$CACHE_DIR" "$PLG_DIR/bin"
+}
+
+_seed_default_template() {
+  _ensure_dirs || return 1
+  if [ -f "$DEFAULT_DEFINITION" ] && [ ! -f "$TEMPLATE_DIR/gameserver.yaml" ]; then
+    cp -f "$DEFAULT_DEFINITION" "$TEMPLATE_DIR/gameserver.yaml"
+  fi
 }
 
 _require_binary() {
   if [ ! -x "$DISTROBUILDER" ]; then
-    echo "Distrobuilder binary is not installed. Use Install/Repair Binary in the plugin UI." >&2
+    echo "Distrobuilder runtime is not installed." >&2
     return 1
   fi
 }
 
+_resolve_template() {
+  _ensure_dirs || return 1
+  local requested="$SELECTED_TEMPLATE"
+  [ -n "$requested" ] || requested="gameserver.yaml"
+
+  local safe
+  safe="$(basename "$requested")"
+
+  case "$safe" in
+    *.yaml|*.yml) ;;
+    *) echo "Selected template must be a .yaml or .yml file." >&2; return 1 ;;
+  esac
+
+  local def="$TEMPLATE_DIR/$safe"
+  [ -f "$def" ] || { echo "Template not found: $def" >&2; return 1; }
+  printf '%s\n' "$def"
+}
+
 install() {
-  _ensure_dirs
   "$CONTROLLER" install_binary
+  _seed_default_template
 }
 
 plugin_update() {
-  _ensure_dirs
   "$CONTROLLER" install_binary
+  _seed_default_template
 }
 
 uninstall() {
@@ -36,47 +94,56 @@ uninstall() {
 }
 
 mos_start() {
-  _ensure_dirs
   "$CONTROLLER" deploy_binary 2>/dev/null || true
+  _seed_default_template 2>/dev/null || true
 }
 
 mos_osupdate() {
-  _ensure_dirs
   "$CONTROLLER" deploy_binary 2>/dev/null || true
+  _seed_default_template 2>/dev/null || true
 }
 
-validate_gameserver() {
-  _ensure_dirs
-  _require_binary || return 1
-  local def="${DEFINITION_DIR}/gameserver.yaml"
-  local log="${LOG_DIR}/validate-gameserver.log"
-
-  if [ ! -f "$def" ]; then
-    echo "Definition not found: $def" | tee "$log" >&2
-    return 1
-  fi
-
-  "$DISTROBUILDER" validate "$def" 2>&1 | tee "$log"
+prepare_storage() {
+  _seed_default_template
+  echo "Template folder: $TEMPLATE_DIR"
+  echo "Build folder: $BUILD_DIR"
+  echo "Cache folder: $CACHE_DIR"
+  echo "Log folder: $LOG_DIR"
 }
 
-build_gameserver() {
-  _ensure_dirs
+validate_selected() {
   _require_binary || return 1
-  local def="${DEFINITION_DIR}/gameserver.yaml"
-  local stamp
+
+  local def
+  def="$(_resolve_template)" || return 1
+
+  local name log
+  name="$(basename "$def")"
+  log="$LOG_DIR/validate-${name%.*}.log"
+
+  echo "Validating: $def" | tee "$log"
+  "$DISTROBUILDER" validate "$def" 2>&1 | tee -a "$log"
+}
+
+build_selected() {
+  _require_binary || return 1
+
+  local def
+  def="$(_resolve_template)" || return 1
+
+  local filename stem stamp out log
+  filename="$(basename "$def")"
+  stem="${filename%.*}"
   stamp="$(date +%Y%m%d-%H%M%S)"
-  local out="${BUILD_DIR}/gameserver-${stamp}"
-  local log="${LOG_DIR}/build-gameserver-${stamp}.log"
-
-  if [ ! -f "$def" ]; then
-    echo "Definition not found: $def" | tee "$log" >&2
-    return 1
-  fi
+  out="$BUILD_DIR/${stem}-${stamp}"
+  log="$LOG_DIR/build-${stem}-${stamp}.log"
 
   mkdir -p "$out"
-  echo "Building GameServer LXC image" | tee "$log"
-  echo "Definition: $def" | tee -a "$log"
-  echo "Output:     $out" | tee -a "$log"
+
+  echo "Building LXC image" | tee "$log"
+  echo "Template: $def" | tee -a "$log"
+  echo "Output:   $out" | tee -a "$log"
+  echo "Cache:    $CACHE_DIR" | tee -a "$log"
 
   "$DISTROBUILDER" \
     --cache-dir "$CACHE_DIR" \
@@ -84,19 +151,12 @@ build_gameserver() {
     --compression=xz \
     2>&1 | tee -a "$log"
 
-  ln -sfn "$out" "${BUILD_DIR}/latest-gameserver"
-  cp -f "$log" "${LOG_DIR}/latest-build.log"
+  local rc=${PIPESTATUS[0]}
+  [ "$rc" -eq 0 ] || return "$rc"
+
+  ln -sfn "$out" "$BUILD_DIR/latest-${stem}"
+  cp -f "$log" "$LOG_DIR/latest-build.log"
 
   echo "Build completed: $out" | tee -a "$log"
   ls -lah "$out" | tee -a "$log"
-}
-
-clean_cache() {
-  rm -rf "$CACHE_DIR"
-  mkdir -p "$CACHE_DIR"
-}
-
-clean_builds() {
-  rm -rf "$BUILD_DIR"
-  mkdir -p "$BUILD_DIR"
 }

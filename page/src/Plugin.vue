@@ -26,38 +26,91 @@
     </div>
 
     <div class="card">
-      <h2>GameServer LXC</h2>
-      <div class="grid">
-        <div><strong>Distribution</strong><span>Debian</span></div>
-        <div><strong>Release</strong><span>Trixie</span></div>
-        <div><strong>Architecture</strong><span>amd64</span></div>
-        <div><strong>Definition</strong><span>gameserver.yaml</span></div>
+      <h2>Persistent Storage</h2>
+      <p class="muted">Keep templates, builds, cache, and logs off the MOS boot USB.</p>
+
+      <div class="form-grid">
+        <label><span>Template folder</span><input v-model.trim="settings.template_dir" type="text" /></label>
+        <label><span>Build folder</span><input v-model.trim="settings.build_dir" type="text" /></label>
+        <label><span>Cache folder</span><input v-model.trim="settings.cache_dir" type="text" /></label>
+        <label><span>Log folder</span><input v-model.trim="settings.log_dir" type="text" /></label>
       </div>
 
       <div class="actions">
-        <button :disabled="busy || !binaryInstalled" @click="run('validate_gameserver', 'Validate GameServer definition')">Validate</button>
-        <button class="primary" :disabled="busy || !binaryInstalled" @click="run('build_gameserver', 'Build GameServer LXC image')">Build Image</button>
-        <button :disabled="busy" @click="run('clean_cache', 'Clean Distrobuilder cache')">Clean Cache</button>
+        <button class="primary" :disabled="storageBusy" @click="saveAndPrepareStorage">
+          {{ storageBusy ? 'Saving...' : 'Save & Prepare Folders' }}
+        </button>
+      </div>
+      <p v-if="storageMessage" :class="['message', storageFailed ? 'error' : 'ok']">{{ storageMessage }}</p>
+    </div>
+
+    <div class="card">
+      <h2>LXC Template</h2>
+
+      <div class="template-row">
+        <label class="template-select">
+          <span>YAML template</span>
+          <select v-model="settings.selected_template" :disabled="templatesBusy || templates.length === 0">
+            <option value="" disabled>Select a template</option>
+            <option v-for="item in templates" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+        <button :disabled="templatesBusy" @click="loadTemplates">
+          {{ templatesBusy ? 'Refreshing...' : 'Refresh Templates' }}
+        </button>
+      </div>
+
+      <p v-if="templates.length === 0" class="hint">
+        Drop <code>.yaml</code> or <code>.yml</code> files into the configured template folder, then refresh.
+      </p>
+
+      <div class="actions">
+        <button :disabled="busy || !binaryInstalled || !settings.selected_template" @click="validateSelected">Validate</button>
+        <button class="primary" :disabled="busy || !binaryInstalled || !settings.selected_template" @click="buildSelected">Build Image</button>
       </div>
 
       <p v-if="message" :class="['message', failed ? 'error' : 'ok']">{{ message }}</p>
-      <p class="hint">Build artifacts are stored persistently under <code>/boot/optional/plugins/distrobuilder/builds/</code>. Logs are under <code>/boot/optional/plugins/distrobuilder/logs/</code>.</p>
+      <p class="hint">Selected: <code>{{ selectedTemplatePath }}</code></p>
+      <p class="hint">Builds: <code>{{ settings.build_dir }}</code></p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+
+const PLUGIN_NAME = 'distrobuilder';
 
 const busy = ref(false);
 const message = ref('');
 const failed = ref(false);
+
 const binaryBusy = ref(false);
 const binaryInstalled = ref(false);
 const binaryVersion = ref('');
 const binarySha = ref('');
 const binaryMessage = ref('');
 const binaryFailed = ref(false);
+
+const storageBusy = ref(false);
+const storageMessage = ref('');
+const storageFailed = ref(false);
+
+const templatesBusy = ref(false);
+const templates = ref([]);
+
+const settings = reactive({
+  template_dir: '/mnt/user/@storage/distrobuilder/templates',
+  build_dir: '/mnt/user/@storage/distrobuilder/builds',
+  cache_dir: '/mnt/user/@storage/distrobuilder/cache',
+  log_dir: '/mnt/user/@storage/distrobuilder/logs',
+  selected_template: '',
+});
+
+const selectedTemplatePath = computed(() => {
+  if (!settings.template_dir || !settings.selected_template) return '';
+  return settings.template_dir.replace(/\/$/, '') + '/' + settings.selected_template;
+});
 
 const getAuthHeaders = () => ({
   Authorization: 'Bearer ' + localStorage.getItem('authToken'),
@@ -83,6 +136,58 @@ async function queryController(args, timeout = 30, parseJson = false) {
     throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
   }
   return body;
+}
+
+async function runFunction(functionName) {
+  const res = await fetch('/api/v1/mos/plugins/executefunction', {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      plugin: PLUGIN_NAME,
+      function: functionName,
+    }),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body?.success === false) {
+    throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
+  }
+  return body;
+}
+
+async function fetchSettings() {
+  const res = await fetch(`/api/v1/mos/plugins/settings/${PLUGIN_NAME}`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) return;
+
+  const data = await res.json();
+  Object.assign(settings, {
+    template_dir: data.template_dir || settings.template_dir,
+    build_dir: data.build_dir || settings.build_dir,
+    cache_dir: data.cache_dir || settings.cache_dir,
+    log_dir: data.log_dir || settings.log_dir,
+    selected_template: data.selected_template || '',
+  });
+}
+
+async function saveSettings() {
+  const res = await fetch(`/api/v1/mos/plugins/settings/${PLUGIN_NAME}`, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ...settings }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Saving settings failed (${res.status})`);
+  }
 }
 
 async function checkBinaryStatus() {
@@ -120,31 +225,86 @@ async function installBinary() {
   }
 }
 
-async function run(fn, displayName) {
+async function saveAndPrepareStorage() {
+  storageBusy.value = true;
+  storageFailed.value = false;
+  storageMessage.value = '';
+  try {
+    await saveSettings();
+    await runFunction('prepare_storage');
+    storageMessage.value = 'Persistent folders are configured and ready.';
+    await loadTemplates();
+  } catch (err) {
+    storageFailed.value = true;
+    storageMessage.value = `Storage setup failed: ${err.message}`;
+  } finally {
+    storageBusy.value = false;
+  }
+}
+
+async function loadTemplates() {
+  templatesBusy.value = true;
+  try {
+    const body = await queryController(['list_templates'], 10, true);
+    templates.value = Array.isArray(body?.output) ? body.output : [];
+
+    if (settings.selected_template && !templates.value.includes(settings.selected_template)) {
+      settings.selected_template = '';
+    }
+
+    if (!settings.selected_template && templates.value.includes('gameserver.yaml')) {
+      settings.selected_template = 'gameserver.yaml';
+    } else if (!settings.selected_template && templates.value.length === 1) {
+      settings.selected_template = templates.value[0];
+    }
+  } catch (err) {
+    templates.value = [];
+    failed.value = true;
+    message.value = `Could not list templates: ${err.message}`;
+  } finally {
+    templatesBusy.value = false;
+  }
+}
+
+async function validateSelected() {
   busy.value = true;
   failed.value = false;
-  message.value = `${displayName} started...`;
+  message.value = 'Validating selected template...';
   try {
-    const res = await fetch('/api/v1/mos/plugins/executefunction', {
-      method: 'POST',
-      headers: {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ plugin: 'distrobuilder', function: fn, displayName }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.error || body?.message || `HTTP ${res.status}`);
-    message.value = `${displayName} completed successfully.`;
+    await saveSettings();
+    await runFunction('validate_selected');
+    message.value = `${settings.selected_template} validated successfully.`;
   } catch (err) {
     failed.value = true;
-    message.value = `${displayName} failed: ${err.message}`;
+    message.value = `Validation failed: ${err.message}`;
   } finally {
     busy.value = false;
   }
 }
 
-onMounted(checkBinaryStatus);
+async function buildSelected() {
+  busy.value = true;
+  failed.value = false;
+  message.value = `Building ${settings.selected_template}...`;
+  try {
+    await saveSettings();
+    await runFunction('build_selected');
+    message.value = `Build completed. Artifacts were written to ${settings.build_dir}.`;
+  } catch (err) {
+    failed.value = true;
+    message.value = `Build failed: ${err.message}`;
+  } finally {
+    busy.value = false;
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([checkBinaryStatus(), fetchSettings()]);
+  try {
+    await runFunction('prepare_storage');
+  } catch (_) {}
+  await loadTemplates();
+});
 </script>
 
 <style scoped>

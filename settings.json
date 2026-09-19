@@ -1,0 +1,7 @@
+{
+  "template_dir": "/mnt/user/@storage/distrobuilder/templates",
+  "build_dir": "/mnt/user/@storage/distrobuilder/builds",
+  "cache_dir": "/mnt/user/@storage/distrobuilder/cache",
+  "log_dir": "/mnt/user/@storage/distrobuilder/logs",
+  "selected_template": ""
+}

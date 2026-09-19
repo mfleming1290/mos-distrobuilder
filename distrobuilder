@@ -6,6 +6,7 @@ BIN_DIR="$PLG_DIR/bin"
 BIN_FILE="$BIN_DIR/distrobuilder"
 RUNTIME_BIN="/usr/bin/distrobuilder-real"
 LOCAL_MANIFEST="$BIN_DIR/distrobuilder.json"
+SETTINGS_FILE="$PLG_DIR/settings.json"
 MANIFEST_URL="https://raw.githubusercontent.com/mfleming1290/mos-plugin-binaries/main/distrobuilder/3.3.1/linux-amd64/distrobuilder.json"
 
 fail() {
@@ -99,6 +100,17 @@ status() {
     "$installed" "$version" "$sha" "$RUNTIME_BIN" "$BIN_FILE"
 }
 
+list_templates() {
+  local template_dir
+  template_dir="$(jq -r '.template_dir // empty' "$SETTINGS_FILE" 2>/dev/null)"
+  [ -n "$template_dir" ] || fail "Template folder is not configured."
+  mkdir -p "$template_dir"
+
+  find "$template_dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) -printf '%f\n' 2>/dev/null |
+    sort |
+    jq -R -s 'split("\n") | map(select(length > 0))'
+}
+
 case "${1:-}" in
   install_binary|repair_binary)
     install_binary
@@ -108,6 +120,9 @@ case "${1:-}" in
     ;;
   status)
     status
+    ;;
+  list_templates)
+    list_templates
     ;;
   *)
     echo "Usage: distrobuilder {install_binary|repair_binary|status}" >&2
