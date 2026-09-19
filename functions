@@ -218,6 +218,11 @@ build_selected() {
 
   _normalize_lxc_metadata "$out" || return 1
 
+  # lxc-download keeps its own image cache under /var/cache/lxc/download.
+  # Remove this distribution's cached copy so the next MOS create checks
+  # the registry and picks up the build we just published.
+  rm -rf "/var/cache/lxc/download/$stem"
+
   ln -sfn "$out" "$BUILD_DIR/latest-${stem}"
   cp -f "$log" "$LOG_DIR/latest-build.log"
 
