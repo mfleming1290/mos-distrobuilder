@@ -138,8 +138,13 @@ actions:
 
       chown -R steam:steam /opt/steamcmd
 
-      # Convenient command path.
-      ln -sf /opt/steamcmd/steamcmd.sh /usr/local/bin/steamcmd
+      # Convenient command path. Use a wrapper instead of a symlink
+      # because steamcmd.sh resolves its own directory from $0.
+      cat > /usr/local/bin/steamcmd <<'EOF'
+      #!/bin/sh
+      exec /opt/steamcmd/steamcmd.sh "$@"
+      EOF
+      chmod 0755 /usr/local/bin/steamcmd
 
       # ------------------------------------------------------------
       # Warm SteamCMD once.
@@ -174,6 +179,30 @@ actions:
       fi
 
       chown -R steam:steam "$STEAM_HOME/.steam"
+
+      # Final ownership pass after SteamCMD has extracted/updated files.
+      chown -R steam:steam \
+        /opt/steamcmd \
+        /srv/gameserver \
+        /etc/gameserver \
+        "$STEAM_HOME/.steam"
+
+      # ------------------------------------------------------------
+      # LXC hostname templates
+      #
+      # lxc-download replaces LXC_NAME in files listed by meta.tar.xz's
+      # templates file when the container is created.
+      # ------------------------------------------------------------
+
+      printf '%s\n' 'LXC_NAME' > /etc/hostname
+
+      cat > /etc/hosts <<'EOF'
+      127.0.0.1 localhost
+      127.0.1.1 LXC_NAME
+      ::1 localhost ip6-localhost ip6-loopback
+      ff02::1 ip6-allnodes
+      ff02::2 ip6-allrouters
+      EOF
 
       # ------------------------------------------------------------
       # Final cleanup

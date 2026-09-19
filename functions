@@ -126,6 +126,54 @@ validate_selected() {
   "$DISTROBUILDER" validate "$def" 2>&1 | tee -a "$log"
 }
 
+_normalize_lxc_metadata() {
+  local out="$1"
+  local meta="$out/meta.tar.xz"
+
+  [ -f "$meta" ] || { echo "Missing LXC metadata archive: $meta" >&2; return 1; }
+
+  local tmp
+  tmp="$(mktemp -d)"
+  tar -xJf "$meta" -C "$tmp" || { rm -rf "$tmp"; return 1; }
+
+  cat > "$tmp/config" <<'EOF'
+lxc.include = LXC_TEMPLATE_CONFIG/common.conf
+lxc.arch = linux64
+EOF
+
+  for suffix in 1 2 3 4; do
+    cat > "$tmp/config.$suffix" <<'EOF'
+lxc.include = LXC_TEMPLATE_CONFIG/debian.common.conf
+lxc.arch = linux64
+EOF
+  done
+
+  cat > "$tmp/config-user" <<'EOF'
+lxc.include = LXC_TEMPLATE_CONFIG/common.conf
+lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
+lxc.arch = linux64
+EOF
+
+  for suffix in 1 2 3 4; do
+    cat > "$tmp/config-user.$suffix" <<'EOF'
+lxc.include = LXC_TEMPLATE_CONFIG/debian.common.conf
+lxc.include = LXC_TEMPLATE_CONFIG/debian.userns.conf
+lxc.arch = linux64
+EOF
+  done
+
+  cat > "$tmp/templates" <<'EOF'
+/etc/hostname
+/etc/hosts
+EOF
+
+  tar -cJf "$meta.new" -C "$tmp" .
+  mv -f "$meta.new" "$meta"
+  rm -rf "$tmp"
+
+  echo "Normalized LXC metadata: $meta"
+}
+
 build_selected() {
   _require_binary || return 1
   _ensure_dirs || return 1
@@ -155,6 +203,8 @@ build_selected() {
 
   local rc=${PIPESTATUS[0]}
   [ "$rc" -eq 0 ] || return "$rc"
+
+  _normalize_lxc_metadata "$out" || return 1
 
   ln -sfn "$out" "$BUILD_DIR/latest-${stem}"
   cp -f "$log" "$LOG_DIR/latest-build.log"
