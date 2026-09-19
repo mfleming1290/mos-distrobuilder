@@ -9,7 +9,7 @@ on:
       version:
         description: 'Plugin version'
         required: true
-        default: '0.1.4'
+        default: '0.1.5'
 
 jobs:
   build:
@@ -57,6 +57,18 @@ jobs:
           mkdir -p "$PKG_DIR/DEBIAN"
 
           cp -R page/dist/distrobuilder/* "$PKG_DIR/var/www/mos-plugins/distrobuilder/"
+
+          # Compatibility aliases for tabs that still have a pre-0.1.5
+          # remoteEntry.js cached. From 0.1.5 onward federation asset names
+          # are stable, so future plugin upgrades won't 404 on old hash names.
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_expose_Plugin.js"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_expose_Plugin-DzSAX9Ks.js"
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_expose_Plugin.js"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_expose_Plugin-LfBvWR6-.js"
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_expose_Locales.js"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_expose_Locales-DoBvCL6n.js"
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_fn_import.js"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_fn_import-99g6wUaO.js"
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_shared_vue.js"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/__federation_shared_vue-BjP-WZdr.js"
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/style.css"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/style-Dy0UFCfP.css"
+          cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/style.css"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/style-C7dZlxPF.css"
+
           cp distrobuilder "$PKG_DIR/usr/bin/plugins/distrobuilder"
           chmod 0755 "$PKG_DIR/usr/bin/plugins/distrobuilder"
           cp icon.png "$PKG_DIR/var/www/mos-plugins/distrobuilder/"

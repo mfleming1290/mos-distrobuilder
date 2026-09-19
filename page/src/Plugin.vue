@@ -331,5 +331,50 @@ button:disabled { opacity: .5; cursor: wait; }
 .error { background: rgba(190,70,70,.14); }
 .hint { opacity: .72; font-size: .92rem; }
 .hash { opacity: .75; font-size: .88rem; }
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.form-grid label,
+.template-select {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+input,
+select {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid rgba(128,128,128,.5);
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.template-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.template-select { min-width: 0; }
+.template-row button { height: 42px; }
 code { word-break: break-all; }
-</style>
+
+@media (max-width: 760px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .template-row { grid-template-columns: 1fr; }
+  .template-row button { width: 100%; }
+}</style>

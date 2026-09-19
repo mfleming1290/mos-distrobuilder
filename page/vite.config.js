@@ -51,6 +51,15 @@ export default defineConfig({
     cssCodeSplit: false,
     outDir: `dist/${PLUGIN_NAME}`,
     assetsDir: '',
-    rollupOptions: { input: {} },
+    rollupOptions: {
+      input: {},
+      output: {
+        // Keep federation chunk names stable across plugin upgrades.
+        // This prevents an already-open MOS tab from requesting a deleted
+        // hash-named chunk after the plugin package is replaced.
+        chunkFileNames: '[name].js',
+        assetFileNames: '[name][extname]',
+      },
+    },
   },
 });
