@@ -54,6 +54,13 @@ _seed_default_template() {
   fi
 }
 
+_sync_builtin_template() {
+  _ensure_dirs || return 1
+  if [ -f "$DEFAULT_DEFINITION" ]; then
+    cp -f "$DEFAULT_DEFINITION" "$TEMPLATE_DIR/gameserver.yaml"
+  fi
+}
+
 _require_binary() {
   if [ ! -x "$DISTROBUILDER" ]; then
     echo "Distrobuilder runtime is not installed." >&2
@@ -81,12 +88,12 @@ _resolve_template() {
 
 install() {
   "$CONTROLLER" install_binary
-  _seed_default_template
+  _sync_builtin_template
 }
 
 plugin_update() {
   "$CONTROLLER" install_binary
-  _seed_default_template
+  _sync_builtin_template
 }
 
 uninstall() {
@@ -166,6 +173,11 @@ EOF
 /etc/hostname
 /etc/hosts
 EOF
+
+  # Force lxc-download to re-check the registry on each create. If the
+  # build ID is unchanged it will reuse the cached rootfs; if a newer
+  # build exists it will download it instead of staying on a stale image.
+  printf '0\n' > "$tmp/expiry"
 
   tar -cJf "$meta.new" -C "$tmp" .
   mv -f "$meta.new" "$meta"
