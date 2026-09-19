@@ -113,6 +113,7 @@ prepare_storage() {
 
 validate_selected() {
   _require_binary || return 1
+  _ensure_dirs || return 1
 
   local def
   def="$(_resolve_template)" || return 1
@@ -127,6 +128,7 @@ validate_selected() {
 
 build_selected() {
   _require_binary || return 1
+  _ensure_dirs || return 1
 
   local def
   def="$(_resolve_template)" || return 1
