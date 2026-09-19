@@ -9,11 +9,13 @@ on:
       version:
         description: 'Plugin version'
         required: true
-        default: '0.1.0'
+        default: '0.1.1'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +29,9 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/}"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download icon
+        run: wget -O icon.png "https://raw.githubusercontent.com/mfleming1290/mos-hub/main/images/distrobuilderIcon.png"
 
       - uses: actions/setup-node@v4
         with:
@@ -52,8 +57,9 @@ jobs:
           mkdir -p "$PKG_DIR/DEBIAN"
 
           cp -R page/dist/distrobuilder/* "$PKG_DIR/var/www/mos-plugins/distrobuilder/"
-          cp bin/distrobuilder "$PKG_DIR/usr/bin/plugins/distrobuilder"
+          cp distrobuilder "$PKG_DIR/usr/bin/plugins/distrobuilder"
           chmod 0755 "$PKG_DIR/usr/bin/plugins/distrobuilder"
+          cp icon.png "$PKG_DIR/var/www/mos-plugins/distrobuilder/"
 
           cat > "$PKG_DIR/DEBIAN/control" <<CONTROL
           Package: mos-distrobuilder-plugin

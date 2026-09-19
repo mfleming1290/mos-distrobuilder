@@ -7,28 +7,43 @@ DEFINITION_DIR="${STATIC_DIR}/definitions"
 BUILD_DIR="${PLG_DIR}/builds"
 LOG_DIR="${PLG_DIR}/logs"
 CACHE_DIR="${PLG_DIR}/cache"
-DISTROBUILDER="/usr/bin/plugins/distrobuilder"
+DISTROBUILDER="${PLG_DIR}/bin/distrobuilder"
+CONTROLLER="/usr/bin/plugins/distrobuilder"
 
 _ensure_dirs() {
-  mkdir -p "$DEFINITION_DIR" "$BUILD_DIR" "$LOG_DIR" "$CACHE_DIR"
+  mkdir -p "$DEFINITION_DIR" "$BUILD_DIR" "$LOG_DIR" "$CACHE_DIR" "${PLG_DIR}/bin"
+}
+
+_require_binary() {
+  if [ ! -x "$DISTROBUILDER" ]; then
+    echo "Distrobuilder binary is not installed. Use Install/Repair Binary in the plugin UI." >&2
+    return 1
+  fi
 }
 
 install() {
   _ensure_dirs
-  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+  "$CONTROLLER" install_binary
 }
 
 plugin_update() {
   _ensure_dirs
-  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+  "$CONTROLLER" install_binary
 }
 
 mos_start() {
   _ensure_dirs
+  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
+}
+
+mos_osupdate() {
+  _ensure_dirs
+  chmod 0755 "$DISTROBUILDER" 2>/dev/null || true
 }
 
 validate_gameserver() {
   _ensure_dirs
+  _require_binary || return 1
   local def="${DEFINITION_DIR}/gameserver.yaml"
   local log="${LOG_DIR}/validate-gameserver.log"
 
@@ -42,6 +57,7 @@ validate_gameserver() {
 
 build_gameserver() {
   _ensure_dirs
+  _require_binary || return 1
   local def="${DEFINITION_DIR}/gameserver.yaml"
   local stamp
   stamp="$(date +%Y%m%d-%H%M%S)"

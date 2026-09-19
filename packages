@@ -5,3 +5,5 @@ gpg
 xz-utils
 tar
 ca-certificates
+wget
+jq

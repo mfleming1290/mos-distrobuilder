@@ -1,38 +1,60 @@
-# MOS Distrobuilder Plugin (starter)
+# MOS Distrobuilder Plugin
 
-Minimal MOS plugin for building LXC images with a bundled amd64 `distrobuilder` binary.
+MOS plugin for building LXC images with Distrobuilder.
+
+## Runtime binary model
+
+The large Distrobuilder executable is intentionally **not stored in this plugin repository**.
+
+The installed plugin contains a small MOS-safe controller at:
+
+`/usr/bin/plugins/distrobuilder`
+
+That controller downloads the pinned binary manifest from:
+
+`https://raw.githubusercontent.com/mfleming1290/mos-plugin-binaries/main/distrobuilder/3.3.1/linux-amd64/distrobuilder.json`
+
+The controller then:
+
+1. Downloads the Distrobuilder binary from the manifest URL.
+2. Verifies its SHA-256 against the manifest.
+3. Stores the verified binary persistently at:
+   `/boot/optional/plugins/distrobuilder/bin/distrobuilder`
+4. Stores a copy of the binary manifest beside it.
+
+The plugin UI can install or repair the runtime binary at any time.
 
 ## Included
 
-- Bundled Linux amd64 `distrobuilder` binary
+- Small Distrobuilder controller script for MOS
+- SHA-256 verified runtime download
 - `staticfiles/definitions/gameserver.yaml`
 - MOS plugin functions to validate/build the GameServer image
-- Basic Vue plugin page
-- `packages` list for Debian/LXC build dependencies
+- Vue plugin page with runtime status/install controls
+- Runtime package dependencies
 - GitHub Actions workflow that creates the installable MOS `.deb`
 - Example MOS Hub plugin template
 
 ## First test
 
-1. Push this folder to a GitHub repository.
-2. In Repository Settings > Actions > General, enable **Read and write permissions**.
-3. Run the **Build and Release** workflow with version `0.1.0`, or push tag `0.1.0`.
-4. Point your MOS Hub plugin JSON at that repository and install release `0.1.0`.
-5. Open **Plugins > Distrobuilder**.
-6. Click **Validate**.
-7. Click **Build Image**.
+1. Build and release the plugin.
+2. Install it from MOS Hub.
+3. Open **Plugins > Distrobuilder**.
+4. Confirm the runtime reports **Installed**.
+5. Click **Validate**.
+6. Click **Build Image**.
 
-Persistent outputs:
+If automatic runtime installation failed during plugin installation, use **Install Binary** in the UI.
 
+## Persistent paths
+
+- Runtime: `/boot/optional/plugins/distrobuilder/bin/distrobuilder`
+- Runtime manifest: `/boot/optional/plugins/distrobuilder/bin/distrobuilder.json`
 - Builds: `/boot/optional/plugins/distrobuilder/builds/`
 - Logs: `/boot/optional/plugins/distrobuilder/logs/`
 - Cache: `/boot/optional/plugins/distrobuilder/cache/`
 - Definition: `/boot/optional/plugins/distrobuilder/staticfiles/definitions/gameserver.yaml`
 
-## Scope of v0.1.0
+## Scope
 
-This is intentionally only the image-builder half of the eventual workflow. It builds LXC image artifacts but does **not** yet publish a SimpleStreams registry or automatically add the image to the MOS LXC creation dropdown.
-
-## Bundled binary
-
-`bin/distrobuilder` is the user-provided Linux amd64 binary that was already tested on a Linux GameServer LXC.
+The current plugin builds LXC image artifacts. It does not yet publish a SimpleStreams registry or automatically add the built image to the MOS LXC creation dropdown.

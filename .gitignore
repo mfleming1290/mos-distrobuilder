@@ -1,0 +1,6 @@
+# Generated frontend output
+/page/node_modules/
+/page/dist/
+
+# Large runtime binaries belong in mos-plugin-binaries, not this plugin source.
+/bin/

@@ -1,0 +1,105 @@
+#!/bin/bash
+set -u
+
+PLG_DIR="/boot/optional/plugins/distrobuilder"
+BIN_DIR="$PLG_DIR/bin"
+BIN_FILE="$BIN_DIR/distrobuilder"
+LOCAL_MANIFEST="$BIN_DIR/distrobuilder.json"
+MANIFEST_URL="https://raw.githubusercontent.com/mfleming1290/mos-plugin-binaries/main/distrobuilder/3.3.1/linux-amd64/distrobuilder.json"
+
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+
+require_amd64() {
+  case "$(uname -m)" in
+    x86_64|amd64) ;;
+    *) fail "Distrobuilder binary is currently available only for linux-amd64." ;;
+  esac
+}
+
+install_binary() {
+  require_amd64
+  mkdir -p "$BIN_DIR"
+
+  local tmp_dir manifest_tmp binary_tmp
+  tmp_dir="$(mktemp -d)"
+  manifest_tmp="$tmp_dir/distrobuilder.json"
+  binary_tmp="$tmp_dir/distrobuilder"
+  trap 'rm -rf "$tmp_dir"' EXIT
+
+  echo "Downloading Distrobuilder manifest..."
+  wget -q "$MANIFEST_URL" -O "$manifest_tmp" || fail "Failed to download binary manifest."
+
+  local name version platform architecture download_url checksum_url expected_sha
+  name="$(jq -r '.name // empty' "$manifest_tmp")"
+  version="$(jq -r '.version // empty' "$manifest_tmp")"
+  platform="$(jq -r '.platform // empty' "$manifest_tmp")"
+  architecture="$(jq -r '.architecture // empty' "$manifest_tmp")"
+  download_url="$(jq -r '.download_url // empty' "$manifest_tmp")"
+  checksum_url="$(jq -r '.checksum_url // empty' "$manifest_tmp")"
+  expected_sha="$(jq -r '.sha256 // empty' "$manifest_tmp")"
+
+  [ "$name" = "distrobuilder" ] || fail "Unexpected binary manifest name: $name"
+  [ "$platform" = "linux" ] || fail "Unexpected binary platform: $platform"
+  [ "$architecture" = "amd64" ] || fail "Unexpected binary architecture: $architecture"
+  [ -n "$version" ] || fail "Binary manifest is missing version."
+  [ -n "$download_url" ] || fail "Binary manifest is missing download_url."
+  [ -n "$checksum_url" ] || fail "Binary manifest is missing checksum_url."
+  [[ "$expected_sha" =~ ^[a-fA-F0-9]{64}$ ]] || fail "Binary manifest contains an invalid SHA-256."
+
+  local checksum_tmp checksum_sha
+  checksum_tmp="$tmp_dir/distrobuilder.sha256"
+  wget -q "$checksum_url" -O "$checksum_tmp" || fail "Failed to download checksum file."
+  checksum_sha="$(awk 'NR==1 {print $1}' "$checksum_tmp")"
+  if [ "${checksum_sha,,}" != "${expected_sha,,}" ]; then
+    fail "Checksum file does not match the binary manifest."
+  fi
+
+  echo "Downloading Distrobuilder $version..."
+  wget -q --show-progress "$download_url" -O "$binary_tmp" || fail "Failed to download Distrobuilder binary."
+  [ -s "$binary_tmp" ] || fail "Downloaded Distrobuilder binary is empty."
+
+  local actual_sha
+  actual_sha="$(sha256sum "$binary_tmp" | awk '{print $1}')"
+  if [ "${actual_sha,,}" != "${expected_sha,,}" ]; then
+    fail "SHA-256 verification failed. Expected $expected_sha but got $actual_sha."
+  fi
+
+  chmod 0755 "$binary_tmp"
+  mv -f "$binary_tmp" "$BIN_FILE"
+  cp -f "$manifest_tmp" "$LOCAL_MANIFEST"
+  chmod 0644 "$LOCAL_MANIFEST"
+
+  echo "Installed Distrobuilder $version"
+  echo "Binary: $BIN_FILE"
+  echo "SHA-256: $actual_sha"
+}
+
+status() {
+  local installed=false version="" sha=""
+  if [ -x "$BIN_FILE" ]; then
+    installed=true
+    sha="$(sha256sum "$BIN_FILE" 2>/dev/null | awk '{print $1}')"
+  fi
+  if [ -f "$LOCAL_MANIFEST" ]; then
+    version="$(jq -r '.version // empty' "$LOCAL_MANIFEST" 2>/dev/null)"
+  fi
+
+  printf '{"installed":%s,"version":"%s","sha256":"%s","path":"%s"}\n' \
+    "$installed" "$version" "$sha" "$BIN_FILE"
+}
+
+case "${1:-}" in
+  install_binary|repair_binary)
+    install_binary
+    ;;
+  status)
+    status
+    ;;
+  *)
+    echo "Usage: distrobuilder {install_binary|repair_binary|status}" >&2
+    exit 2
+    ;;
+esac
