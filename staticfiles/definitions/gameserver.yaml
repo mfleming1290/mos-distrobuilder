@@ -51,33 +51,20 @@ packages:
         - libgcc-s1
         - libstdc++6
 
-files:
-  # Generic location for workload/game-specific configuration.
-  - path: /etc/gameserver
-    generator: dump
-    type: directory
-    mode: 0755
-
-  # One-game-per-LXC mount point.
-  # In MOS, bind-mount the existing host game directory here, e.g.:
-  #   host:  /mnt/user/@home/matt/servers/dragonwilds
-  #   guest: /srv/gameserver
-  - path: /srv/gameserver
-    generator: dump
-    type: directory
-    mode: 0755
-
-  # SteamCMD installation.
-  - path: /opt/steamcmd
-    generator: dump
-    type: directory
-    mode: 0755
-
 actions:
   - trigger: post-packages
     action: |
       #!/bin/sh
       set -eux
+
+      # ------------------------------------------------------------
+      # Required directories
+      # ------------------------------------------------------------
+
+      mkdir -p \
+        /etc/gameserver \
+        /srv/gameserver \
+        /opt/steamcmd
 
       # ------------------------------------------------------------
       # Locale
