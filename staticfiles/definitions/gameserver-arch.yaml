@@ -1,0 +1,296 @@
+image:
+  distribution: archlinux
+  architecture: amd64
+  description: Arch SteamCMD Game Server LXC Base
+
+source:
+  downloader: archlinux-http
+  url: https://archive.archlinux.org/iso/
+
+packages:
+  manager: pacman
+  update: true
+  cleanup: true
+
+  sets:
+    - action: install
+      packages:
+        # Base system
+        - base
+        - systemd
+        - sudo
+        - ca-certificates
+        - glibc
+        - tzdata
+        - bash
+
+        # Network / diagnostics
+        - curl
+        - wget
+        - procps-ng
+        - iproute2
+        - iputils
+        - bind
+        - net-tools
+        - lsof
+
+        # General tooling
+        - jq
+        - file
+        - rsync
+        - tar
+        - xz
+        - gzip
+        - bzip2
+        - unzip
+        - nano
+        - less
+
+        # Common 64-bit runtime dependencies
+        - gcc-libs
+
+actions:
+  - trigger: post-unpack
+    action: |
+      #!/bin/bash
+      set -euxo pipefail
+
+      # pacman 7+ enables a download sandbox that uses Landlock.
+      # The MOS host kernel does not expose Landlock to distrobuilder,
+      # so disable pacman's download sandbox inside the image build.
+      if grep -q '^#DisableSandbox' /etc/pacman.conf; then
+        sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
+      elif ! grep -q '^DisableSandbox$' /etc/pacman.conf; then
+        sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+      fi
+
+  - trigger: post-packages
+    action: |
+      #!/bin/bash
+      set -euxo pipefail
+
+      # ------------------------------------------------------------
+      # Required directories
+      # ------------------------------------------------------------
+
+      mkdir -p \
+        /etc/gameserver \
+        /srv/gameserver \
+        /opt/steamcmd \
+        /home/matt/servers
+
+      # ------------------------------------------------------------
+      # Locale
+      # ------------------------------------------------------------
+
+      if ! grep -q '^en_US.UTF-8 UTF-8$' /etc/locale.gen; then
+        echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+      fi
+
+      locale-gen
+
+      cat > /etc/locale.conf <<'EOF'
+      LANG=en_US.UTF-8
+      EOF
+
+      # ------------------------------------------------------------
+      # Primary user
+      #
+      # Existing MOS-mounted files are owned by host UID/GID 1000.
+      # Recreate the original matt account with the same IDs so a
+      # privileged LXC sees bind-mounted files with matching ownership.
+      # ------------------------------------------------------------
+
+      if ! getent group 1000 >/dev/null 2>&1; then
+        groupadd --gid 1000 matt
+      elif ! getent group matt >/dev/null 2>&1; then
+        existing_group="$(getent group 1000 | cut -d: -f1)"
+        groupmod --new-name matt "$existing_group"
+      fi
+
+      if ! id matt >/dev/null 2>&1; then
+        useradd \
+          --uid 1000 \
+          --gid 1000 \
+          --create-home \
+          --shell /bin/bash \
+          matt
+      fi
+
+      usermod -aG wheel matt
+
+      cat > /etc/sudoers.d/wheel <<'EOF'
+      %wheel ALL=(ALL:ALL) ALL
+      EOF
+
+      chmod 0440 /etc/sudoers.d/wheel
+
+      # ------------------------------------------------------------
+      # Enable Arch multilib repository
+      #
+      # Needed for 32-bit SteamCMD/runtime libraries.
+      # ------------------------------------------------------------
+
+      if ! grep -q '^\[multilib\]$' /etc/pacman.conf; then
+        cat >> /etc/pacman.conf <<'EOF'
+
+      [multilib]
+      Include = /etc/pacman.d/mirrorlist
+      EOF
+      fi
+
+      pacman -Syy --noconfirm
+
+      # ------------------------------------------------------------
+      # Install 32-bit Steam runtime dependencies
+      # ------------------------------------------------------------
+
+      pacman -S --noconfirm --needed \
+        lib32-glibc \
+        lib32-gcc-libs
+
+      # ------------------------------------------------------------
+      # Directory ownership
+      # ------------------------------------------------------------
+
+      chown -R matt:matt \
+        /opt/steamcmd \
+        /srv/gameserver \
+        /etc/gameserver \
+        /home/matt/servers
+
+      # ------------------------------------------------------------
+      # Install SteamCMD
+      #
+      # Install manually so the base image does not depend on an
+      # AUR helper.
+      # ------------------------------------------------------------
+
+      cd /opt/steamcmd
+
+      curl -fsSL \
+        'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' \
+        -o steamcmd_linux.tar.gz
+
+      tar -xzf steamcmd_linux.tar.gz
+      rm steamcmd_linux.tar.gz
+
+      chown -R matt:matt /opt/steamcmd
+
+      # Convenient command path. Use a wrapper instead of a symlink
+      # because steamcmd.sh resolves its own directory from $0.
+      cat > /usr/local/bin/steamcmd <<'EOF'
+      #!/bin/sh
+      exec /opt/steamcmd/steamcmd.sh "$@"
+      EOF
+
+      chmod 0755 /usr/local/bin/steamcmd
+
+      # ------------------------------------------------------------
+      # Warm SteamCMD once.
+      #
+      # SteamCMD normally updates/re-execs itself on first launch.
+      # Doing it during image creation leaves new LXCs ready to use.
+      # ------------------------------------------------------------
+
+      su -s /bin/bash matt -c \
+        '/opt/steamcmd/steamcmd.sh +login anonymous +quit'
+
+      # ------------------------------------------------------------
+      # Steam SDK compatibility paths
+      # ------------------------------------------------------------
+
+      STEAM_HOME="$(getent passwd matt | cut -d: -f6)"
+
+      mkdir -p \
+        "$STEAM_HOME/.steam/sdk32" \
+        "$STEAM_HOME/.steam/sdk64"
+
+      if [ -f /opt/steamcmd/linux32/steamclient.so ]; then
+        ln -sf \
+          /opt/steamcmd/linux32/steamclient.so \
+          "$STEAM_HOME/.steam/sdk32/steamclient.so"
+      fi
+
+      if [ -f /opt/steamcmd/linux64/steamclient.so ]; then
+        ln -sf \
+          /opt/steamcmd/linux64/steamclient.so \
+          "$STEAM_HOME/.steam/sdk64/steamclient.so"
+      fi
+
+      chown -R matt:matt "$STEAM_HOME/.steam"
+
+      # Final ownership pass after SteamCMD has extracted/updated files.
+      chown -R matt:matt \
+        /opt/steamcmd \
+        /srv/gameserver \
+        /etc/gameserver \
+        /home/matt/servers \
+        "$STEAM_HOME/.steam"
+
+      # ------------------------------------------------------------
+      # LXC hostname templates
+      #
+      # lxc-download replaces LXC_NAME in files listed by meta.tar.xz's
+      # templates file when the container is created.
+      # ------------------------------------------------------------
+
+      printf '%s\n' 'LXC_NAME' > /etc/hostname
+
+      cat > /etc/hosts <<'EOF'
+      127.0.0.1 localhost
+      127.0.1.1 LXC_NAME
+      ::1 localhost ip6-localhost ip6-loopback
+      ff02::1 ip6-allnodes
+      ff02::2 ip6-allrouters
+      EOF
+
+      # ------------------------------------------------------------
+      # Final cleanup
+      # ------------------------------------------------------------
+
+      pacman -Scc --noconfirm || true
+      rm -rf /var/cache/pacman/pkg/*
+
+targets:
+  lxc:
+    create_message: |-
+      Arch SteamCMD game-server LXC created.
+
+      Base image provides:
+        - Arch Linux amd64
+        - systemd
+        - matt user (UID/GID 1000)
+        - sudo access through wheel
+        - SteamCMD
+        - multilib support
+        - 32-bit Steam runtime libraries
+        - common Steam runtime libraries
+        - Steam SDK compatibility paths
+        - /home/matt/servers
+        - /etc/gameserver
+        - /srv/gameserver
+        - /opt/steamcmd
+        - steamcmd available in PATH
+
+      Intended migration topology:
+        - existing host game files bind-mounted to /home/matt/servers
+        - original matt UID/GID 1000 preserved
+        - old server paths can remain unchanged
+        - game-specific services/configuration added after creation
+
+      Recommended initial MOS bind mount:
+        Host:
+          /mnt/user/@home/matt/servers
+
+        Container:
+          /home/matt/servers
+
+      For the initial MOS migration test, create the LXC as privileged
+      when mounting host directories owned by UID/GID 1000, unless you
+      configure an appropriate idmapped mount.
+
+      No game is installed or configured by this base image.
+
+mappings:
+  architecture_map: archlinux

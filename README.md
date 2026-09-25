@@ -28,8 +28,9 @@ The plugin UI can install or repair the runtime binary at any time.
 
 - Small Distrobuilder controller script for MOS
 - SHA-256 verified runtime download
-- `staticfiles/definitions/gameserver.yaml`
-- MOS plugin functions to validate/build the GameServer image
+- `staticfiles/definitions/gameserver.yaml` (Debian Trixie)
+- `staticfiles/definitions/gameserver-arch.yaml` (Arch Linux)
+- MOS plugin functions to validate/build GameServer images and emit `registry.json` SimpleStreams metadata
 - Vue plugin page with runtime status/install controls
 - Runtime package dependencies
 - GitHub Actions workflow that creates the installable MOS `.deb`
@@ -53,8 +54,9 @@ If automatic runtime installation failed during plugin installation, use **Insta
 - Builds: `/boot/optional/plugins/distrobuilder/builds/`
 - Logs: `/boot/optional/plugins/distrobuilder/logs/`
 - Cache: `/boot/optional/plugins/distrobuilder/cache/`
-- Definition: `/boot/optional/plugins/distrobuilder/staticfiles/definitions/gameserver.yaml`
+- Debian definition: `/boot/optional/plugins/distrobuilder/staticfiles/definitions/gameserver.yaml`
+- Arch definition: `/boot/optional/plugins/distrobuilder/staticfiles/definitions/gameserver-arch.yaml`
 
 ## Scope
 
-The current plugin builds LXC image artifacts. It does not yet publish a SimpleStreams registry or automatically add the built image to the MOS LXC creation dropdown.
+The plugin builds LXC image artifacts and emits a `registry.json` manifest beside each successful build. A separate merged SimpleStreams registry can consume those manifests and expose the builds in the MOS LXC creation dropdown.

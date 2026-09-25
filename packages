@@ -7,3 +7,4 @@ tar
 ca-certificates
 wget
 jq
+zstd

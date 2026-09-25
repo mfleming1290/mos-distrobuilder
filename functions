@@ -186,6 +186,71 @@ EOF
   echo "Normalized LXC metadata: $meta"
 }
 
+_write_registry_manifest() {
+  local def="$1" out="$2" stem="$3"
+  local distribution release arch os product aliases
+
+  distribution="$(awk '
+    /^image:[[:space:]]*$/ { in_image=1; next }
+    in_image && /^[^[:space:]]/ { exit }
+    in_image && $1 == "distribution:" { print $2; exit }
+  ' "$def")"
+
+  release="$(awk '
+    /^image:[[:space:]]*$/ { in_image=1; next }
+    in_image && /^[^[:space:]]/ { exit }
+    in_image && $1 == "release:" { print $2; exit }
+  ' "$def")"
+
+  arch="$(awk '
+    /^image:[[:space:]]*$/ { in_image=1; next }
+    in_image && /^[^[:space:]]/ { exit }
+    in_image && $1 == "architecture:" { print $2; exit }
+  ' "$def")"
+
+  case "$distribution" in
+    archlinux) os="Arch Linux"; [ -n "$release" ] || release="arch" ;;
+    debian)    os="Debian" ;;
+    ubuntu)    os="Ubuntu" ;;
+    *)         os="$distribution" ;;
+  esac
+
+  [ -n "$release" ] || release="current"
+  [ -n "$arch" ] || arch="amd64"
+
+  product="$stem"
+  case "$distribution" in
+    archlinux) product="${product%-archlinux}"; product="${product%-arch}" ;;
+    debian)    product="${product%-debian}" ;;
+    ubuntu)    product="${product%-ubuntu}" ;;
+  esac
+
+  aliases="$product/$release/default,$product/$release"
+  if [ "$stem" = "$product" ]; then
+    aliases="$aliases,$product"
+  fi
+
+  jq -n \
+    --arg product "$product" \
+    --arg os "$os" \
+    --arg release "$release" \
+    --arg arch "$arch" \
+    --arg variant "default" \
+    --arg aliases "$aliases" \
+    '{
+      product: $product,
+      os: $os,
+      release: $release,
+      release_title: $release,
+      arch: $arch,
+      variant: $variant,
+      aliases: ($aliases | split(",")),
+      requirements: {}
+    }' > "$out/registry.json"
+
+  echo "Registry manifest: $out/registry.json"
+}
+
 build_selected() {
   _require_binary || return 1
   _ensure_dirs || return 1
@@ -217,12 +282,14 @@ build_selected() {
   [ "$rc" -eq 0 ] || return "$rc"
 
   _normalize_lxc_metadata "$out" || return 1
+  _write_registry_manifest "$def" "$out" "$stem" || return 1
 
   # lxc-download keeps its own image cache under /var/cache/lxc/download.
   # Remove this distribution's cached copy so the next MOS create checks
   # the registry and picks up the build we just published.
   rm -rf "/var/cache/lxc/download/$stem"
 
+  rm -rf "$BUILD_DIR/latest-${stem}"
   ln -sfn "$out" "$BUILD_DIR/latest-${stem}"
   cp -f "$log" "$LOG_DIR/latest-build.log"
 
