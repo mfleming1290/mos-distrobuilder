@@ -73,11 +73,58 @@
       <p class="hint">Selected: <code>{{ selectedTemplatePath }}</code></p>
       <p class="hint">Builds: <code>{{ settings.build_dir }}</code></p>
     </div>
+
+    <div class="card">
+      <h2>LXC Provisioning</h2>
+      <p class="muted">Create an LXC from a completed registry image with a dedicated IP, shared binaries, persistent catalogue, and Tailscale TUN. Nothing is created during Preview.</p>
+      <div class="form-grid">
+        <label><span>Container name</span><input v-model.trim="provision.name" placeholder="palworld" autocomplete="off" /></label>
+        <label><span>Published image</span>
+          <select v-model="provision.image_key">
+            <option value="" disabled>Select a published build</option>
+            <option v-for="image in provisionInfo.images" :key="imageKey(image)" :value="imageKey(image)">{{ image.product }}/{{ image.release }} ({{ image.arch }})</option>
+          </select>
+        </label>
+        <label><span>Parent NIC</span>
+          <select v-model="provision.nic">
+            <option value="" disabled>Select host interface</option>
+            <option v-for="nic in provisionInfo.interfaces.filter(item => item.up)" :key="nic.name" :value="nic.name">{{ nic.name }} — {{ nic.mac }}</option>
+          </select>
+        </label>
+        <label><span>Dedicated IPv4 / CIDR</span><input v-model.trim="provision.ip" placeholder="192.168.50.97/24" /></label>
+        <label><span>Gateway</span><input v-model.trim="provision.gateway" /></label>
+        <label><span>Bootstrap DNS</span><input v-model.trim="provision.dns" /></label>
+        <label><span>Registry hostname</span><input v-model.trim="provision.registry" /></label>
+        <label><span>Host game catalogue</span><input v-model.trim="provision.game_root" /></label>
+        <label><span>Host shared binaries</span><input v-model.trim="provision.binary_dir" :disabled="!provision.mount_binaries" /></label>
+      </div>
+      <div class="provision-options">
+        <label><input v-model="provision.mount_binaries" type="checkbox" /> Mount shared binaries read-only</label>
+        <label><input v-model="provision.tun" type="checkbox" /> Enable TUN passthrough</label>
+        <label><input v-model="provision.autostart" type="checkbox" /> Autostart after host reboot</label>
+        <label><input v-model="provision.start" type="checkbox" /> Start immediately after creation</label>
+      </div>
+      <div class="actions">
+        <button :disabled="provisionBusy" @click="loadProvisionInfo">Refresh Images & NICs</button>
+        <button class="primary" :disabled="provisionBusy || !provision.name || !provision.image_key || !provision.nic" @click="previewProvision">Preview & Check Conflicts</button>
+      </div>
+      <p v-if="provisionMessage" :class="['message', provisionFailed ? 'error' : 'ok']">{{ provisionMessage }}</p>
+      <template v-if="provisionPlan">
+        <p class="hint"><strong>Planned command:</strong> <code>{{ provisionPlan.create_argv.join(' ') }}</code></p>
+        <pre class="config-preview">{{ provisionPlan.config_append }}</pre>
+        <p v-for="warning in provisionPlan.warnings" :key="warning" class="hint">{{ warning }}</p>
+        <label class="reservation-confirm"><input v-model="confirmReservation" type="checkbox" /> I verified this address is reserved and unused in the router.</label>
+        <div class="actions">
+          <button class="primary" :disabled="provisionBusy || !confirmReservation" @click="createProvision">Create LXC from this plan</button>
+        </div>
+      </template>
+      <p class="hint">Other containers and existing game data are not deleted. The shared catalogue mounts read-only with this game's directory writable.</p>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 const PLUGIN_NAME = 'distrobuilder';
 
@@ -106,6 +153,106 @@ const settings = reactive({
   log_dir: '/mnt/user/@storage/distrobuilder/logs',
   selected_template: '',
 });
+
+// The plan is invalidated on every input change; the backend independently
+// revalidates every field before creation to prevent stale-plan accidents.
+const provisionBusy = ref(false);
+const provisionFailed = ref(false);
+const provisionMessage = ref('');
+const provisionPlan = ref(null);
+const confirmReservation = ref(false);
+const provisionInfo = reactive({ images: [], interfaces: [] });
+const provision = reactive({
+  name: '', image_key: '', nic: '', ip: '',
+  gateway: '192.168.50.1', dns: '192.168.50.1',
+  registry: 'lxc-registry.time-wall.ts.net',
+  game_root: '/mnt/user/@gameservers', binary_dir: '/mnt/user/binaries',
+  mount_binaries: true, tun: true, autostart: true, start: false,
+});
+watch(provision, () => {
+  provisionPlan.value = null;
+  confirmReservation.value = false;
+}, { deep: true });
+
+const imageKey = (image) => [image.product, image.release, image.arch, image.variant].join(':');
+function provisionPayload() {
+  const selected = provisionInfo.images.find((entry) => imageKey(entry) === provision.image_key);
+  if (!selected) throw new Error('Select a completed published image.');
+  return {
+    name: provision.name, product: selected.product,
+    release: selected.release, arch: selected.arch,
+    nic: provision.nic, ip: provision.ip, gateway: provision.gateway,
+    dns: provision.dns, registry: provision.registry,
+    game_root: provision.game_root, binary_dir: provision.binary_dir,
+    mount_binaries: provision.mount_binaries, tun: provision.tun,
+    autostart: provision.autostart, start: provision.start,
+  };
+}
+async function loadProvisionInfo() {
+  provisionBusy.value = true;
+  provisionFailed.value = false;
+  try {
+    const body = await queryController(['provision_info'], 15, true);
+    const data = body?.output || {};
+    provisionInfo.images = Array.isArray(data.images) ? data.images : [];
+    provisionInfo.interfaces = Array.isArray(data.interfaces) ? data.interfaces : [];
+    if (data.defaults) {
+      provision.game_root = data.defaults.game_root || provision.game_root;
+      provision.binary_dir = data.defaults.binary_dir || provision.binary_dir;
+      provision.gateway = data.defaults.gateway || provision.gateway;
+      provision.dns = provision.gateway;
+      provision.registry = data.defaults.registry || provision.registry;
+    }
+    if (!provisionInfo.images.some((entry) => imageKey(entry) === provision.image_key)) {
+      provision.image_key = '';
+    }
+    if (!provisionInfo.interfaces.some((entry) => entry.name === provision.nic && entry.up)) {
+      provision.nic = '';
+    }
+    provisionMessage.value = provisionInfo.images.length
+      ? 'Published image and physical interface inventory loaded.'
+      : 'No completed local image builds. Build an image above first.';
+  } catch (err) {
+    provisionFailed.value = true;
+    provisionMessage.value = `Could not inspect provisioning prerequisites: ${err.message}`;
+  } finally {
+    provisionBusy.value = false;
+  }
+}
+async function previewProvision() {
+  provisionBusy.value = true;
+  provisionFailed.value = false;
+  provisionPlan.value = null;
+  try {
+    const body = await queryController(['provision_plan', JSON.stringify(provisionPayload())], 25, true);
+    if (!body?.output?.config_append) throw new Error('Controller did not return a plan.');
+    provisionPlan.value = body.output;
+    provisionMessage.value = 'Plan validated; review the config and confirm the router reservation.';
+  } catch (err) {
+    provisionFailed.value = true;
+    provisionMessage.value = `Provisioning plan failed: ${err.message}`;
+  } finally {
+    provisionBusy.value = false;
+  }
+}
+async function createProvision() {
+  if (!provisionPlan.value || !confirmReservation.value) return;
+  provisionBusy.value = true;
+  provisionFailed.value = false;
+  try {
+    const payload = { ...provisionPayload(), confirm_ip_reserved: true };
+    const body = await queryController(['provision_create', JSON.stringify(payload)], 600, true);
+    if (!body?.output?.created) throw new Error('Create returned no success confirmation.');
+    provisionMessage.value = `Created ${body.output.name} at ${body.output.ip}.`;
+    provisionPlan.value = null;
+    confirmReservation.value = false;
+  } catch (err) {
+    provisionFailed.value = true;
+    provisionMessage.value = `Creation failed or could not be confirmed: ${err.message}. Check the LXC inventory before retrying.`;
+  } finally {
+    provisionBusy.value = false;
+  }
+}
 
 const selectedTemplatePath = computed(() => {
   if (!settings.template_dir || !settings.selected_template) return '';
@@ -304,6 +451,7 @@ onMounted(async () => {
     await runFunction('prepare_storage');
   } catch (_) {}
   await loadTemplates();
+  await loadProvisionInfo();
 });
 </script>
 
@@ -372,6 +520,11 @@ select {
 .template-select { min-width: 0; }
 .template-row button { height: 42px; }
 code { word-break: break-all; }
+.config-preview { padding: 12px; border-radius: 8px; background: rgba(128,128,128,.12); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; max-height: 350px; overflow: auto; }
+.provision-options { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin-top: 18px; }
+.provision-options label, .reservation-confirm { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.provision-options input, .reservation-confirm input { width: auto; flex: none; }
+.reservation-confirm { margin-top: 16px; }
 
 @media (max-width: 760px) {
   .form-grid { grid-template-columns: 1fr; }

@@ -5,6 +5,7 @@ PLG_DIR="/boot/optional/plugins/distrobuilder"
 BIN_DIR="$PLG_DIR/bin"
 BIN_FILE="$BIN_DIR/distrobuilder"
 RUNTIME_BIN="/usr/bin/distrobuilder-real"
+PROVISIONER="/usr/bin/plugins/distrobuilder-provision"
 LOCAL_MANIFEST="$BIN_DIR/distrobuilder.json"
 SETTINGS_FILE="$PLG_DIR/settings.json"
 MANIFEST_URL="https://raw.githubusercontent.com/mfleming1290/mos-plugin-binaries/main/distrobuilder/3.3.1/linux-amd64/distrobuilder.json"
@@ -124,8 +125,19 @@ case "${1:-}" in
   list_templates)
     list_templates
     ;;
+  provision_info)
+    exec python3 "$PROVISIONER" info
+    ;;
+  provision_plan)
+    [ "$#" -eq 2 ] || fail "Expected one JSON provision payload."
+    exec python3 "$PROVISIONER" plan "$2"
+    ;;
+  provision_create)
+    [ "$#" -eq 2 ] || fail "Expected one JSON provision payload."
+    exec python3 "$PROVISIONER" create "$2"
+    ;;
   *)
-    echo "Usage: distrobuilder {install_binary|repair_binary|status}" >&2
+    echo "Usage: distrobuilder {install_binary|repair_binary|status|list_templates|provision_info|provision_plan|provision_create}" >&2
     exit 2
     ;;
 esac

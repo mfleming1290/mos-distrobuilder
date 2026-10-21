@@ -23,6 +23,7 @@ packages:
         - ca-certificates
         - locales
         - tzdata
+        - ifupdown
 
         # Network / diagnostics
         - curl
@@ -62,9 +63,26 @@ actions:
       # ------------------------------------------------------------
 
       mkdir -p \
-        /etc/gameserver \
+        /etc/gameserver/secrets \
         /srv/gameserver \
-        /opt/steamcmd
+        /opt/steamcmd \
+        /var/lib/gameserver-manager \
+        /var/log/gameserver-manager \
+        /run/gameserver-manager
+
+      # Keep secrets host-managed by default. BattleCTL/gameserver normally
+      # runs with sufficient privilege to read them, while game processes do
+      # not need access to Steam credentials.
+      chmod 0700 /etc/gameserver/secrets
+
+      # Runtime directories under /run disappear on boot. The gameserver CLI
+      # must be able to create its own authority state as the steam user.
+      mkdir -p /etc/tmpfiles.d
+      cat > /etc/tmpfiles.d/gameserver-manager.conf <<'EOF'
+      d /run/gameserver-manager 0750 steam steam -
+      EOF
+      # UID 1000 is created later in this action, so ownership is set after
+      # useradd below.
 
       # ------------------------------------------------------------
       # Locale
@@ -78,12 +96,30 @@ actions:
       update-locale LANG=en_US.UTF-8
 
       # ------------------------------------------------------------
+      # Network
+      #
+      # The provisioning controller assigns a unique static IPv4 address
+      # and gateway in lxc.net.0, before the guest first starts.
+      # Keep ifupdown in manual mode so guest DHCP cannot overwrite it.
+      # ------------------------------------------------------------
+
+      mkdir -p /etc/network/interfaces.d
+
+      cat > /etc/network/interfaces.d/eth0 <<'EOF'
+      auto eth0
+      iface eth0 inet manual
+      EOF
+
+      systemctl enable networking.service
+
+      # ------------------------------------------------------------
       # Steam / game-server user
       #
-      # Existing MOS-mounted game directories are owned by host
-      # UID/GID 1000. For the first migration test, create the guest
-      # Steam user with the same UID/GID so a privileged LXC sees the
-      # bind-mounted files with matching ownership.
+      # Host game data is intentionally kept outside the LXC and bind-mounted
+      # at /srv/gameserver. The homelab convention is UID/GID 1000, so the
+      # guest steam account uses the same IDs and sees mounted files with the
+      # expected ownership. This can become parameterized when template ENV
+      # rendering is added.
       # ------------------------------------------------------------
 
       if ! getent group 1000 >/dev/null 2>&1; then
@@ -101,6 +137,11 @@ actions:
           --shell /bin/bash \
           steam
       fi
+
+      # User-owned runtime state; the protected Steam credentials directory
+      # remains root-only and is never made writable to game processes.
+      chown steam:steam /run/gameserver-manager \
+        /var/lib/gameserver-manager /var/log/gameserver-manager
 
       # ------------------------------------------------------------
       # Enable i386 runtime support
@@ -120,8 +161,7 @@ actions:
 
       chown -R steam:steam \
         /opt/steamcmd \
-        /srv/gameserver \
-        /etc/gameserver
+        /srv/gameserver
 
       # ------------------------------------------------------------
       # Install SteamCMD
@@ -138,8 +178,8 @@ actions:
 
       chown -R steam:steam /opt/steamcmd
 
-      # Convenient command path. Use a wrapper instead of a symlink
-      # because steamcmd.sh resolves its own directory from $0.
+      # Convenient command path. Use a wrapper instead of a symlink because
+      # steamcmd.sh resolves its own directory from $0.
       cat > /usr/local/bin/steamcmd <<'EOF'
       #!/bin/sh
       exec /opt/steamcmd/steamcmd.sh "$@"
@@ -147,10 +187,7 @@ actions:
       chmod 0755 /usr/local/bin/steamcmd
 
       # ------------------------------------------------------------
-      # Warm SteamCMD once.
-      #
-      # SteamCMD can update/re-exec itself on first launch. Doing this
-      # in the image leaves newly-created LXCs ready to use immediately.
+      # Warm SteamCMD once
       # ------------------------------------------------------------
 
       su -s /bin/bash steam -c \
@@ -178,13 +215,10 @@ actions:
           "$STEAM_HOME/.steam/sdk64/steamclient.so"
       fi
 
-      chown -R steam:steam "$STEAM_HOME/.steam"
-
       # Final ownership pass after SteamCMD has extracted/updated files.
       chown -R steam:steam \
         /opt/steamcmd \
         /srv/gameserver \
-        /etc/gameserver \
         "$STEAM_HOME/.steam"
 
       # ------------------------------------------------------------
@@ -205,6 +239,40 @@ actions:
       EOF
 
       # ------------------------------------------------------------
+      # Game-independent v2 gameserver configuration and Flow-ready HOME
+      # ------------------------------------------------------------
+
+      mkdir -p /etc/gameserver/games /home/steam/.local/bin /home/steam/.config/flow
+
+      cat > /etc/gameserver/gameserver.yaml <<'EOF'
+      version: 2
+      defaults:
+        library_dir: /srv/gameserver
+        steam:
+          login_profile: anonymous
+          platform: linux
+      steam_profiles:
+        anonymous:
+          username: anonymous
+      EOF
+
+      cat > /etc/gameserver/README.md <<'EOF'
+      Generic game-server LXC image.
+      Games are not installed in the base image.
+      Provision a game-specific v2 profile under /etc/gameserver/games/,
+      then use the shared gameserver CLI and Flow workflows.
+      Install paths live below /srv/gameserver/<game>.
+      EOF
+
+      for profile in /home/steam/.profile /home/steam/.bashrc; do
+        if ! grep -Fq 'HOME/.local/bin' "$profile" 2>/dev/null; then
+          printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> "$profile"
+        fi
+      done
+      chown -R steam:steam /home/steam/.local /etc/gameserver/games /home/steam/.config
+      chmod 0755 /home/steam/.local/bin
+
+      # ------------------------------------------------------------
       # Final cleanup
       # ------------------------------------------------------------
 
@@ -219,22 +287,26 @@ targets:
       Base image provides:
         - Debian Trixie amd64
         - systemd
+        - eth0 prepared for host-assigned static IPv4 via ifupdown
         - steam user (UID/GID 1000)
-        - SteamCMD
-        - i386 compatibility
-        - common Steam runtime libraries
+        - SteamCMD in PATH
+        - i386 compatibility and common Steam runtime libraries
         - Steam SDK compatibility paths
-        - /etc/gameserver
-        - /srv/gameserver
+        - /etc/gameserver and protected /etc/gameserver/secrets
+        - /var/lib/gameserver-manager and /var/log/gameserver-manager
+        - /srv/gameserver bind-mount target
         - /opt/steamcmd
-        - steamcmd available in PATH
 
       Intended topology:
         - one game server per LXC
-        - existing game files bind-mounted at /srv/gameserver
-        - game-specific service/configuration added after creation
+        - durable game install/save/config data remains on host storage
+        - host game directory is bind-mounted at /srv/gameserver
+        - BattleCTL/gameserver binary may be bind-mounted or installed separately
+        - game-specific BattleCTL config and systemd unit are provisioned after creation
+        - authenticated Steam games require a one-time SteamCMD login/cache
 
-      For the initial MOS migration test, create the LXC as privileged
-      when mounting host directories owned by UID/GID 1000.
+      Example host mapping:
+        /mnt/user/@home/matt/servers/<game> -> /srv/gameserver
 
-      No game is installed or configured by this base image.
+      The LXC is disposable runtime infrastructure; game data should survive
+      container replacement because it lives outside the container.

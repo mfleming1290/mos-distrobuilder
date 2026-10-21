@@ -8,3 +8,5 @@ ca-certificates
 wget
 jq
 zstd
+python3
+iproute2

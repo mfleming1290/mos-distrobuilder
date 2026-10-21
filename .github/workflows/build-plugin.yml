@@ -9,7 +9,7 @@ on:
       version:
         description: 'Plugin version'
         required: true
-        default: '0.1.10'
+        default: '0.1.11'
 
 jobs:
   build:
@@ -30,6 +30,20 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Verify provisioner and registry mapping
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v
+          python3 -m py_compile provision-lxc.py
+          bash -n functions
+          bash -n distrobuilder
+          source functions
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          _write_registry_manifest staticfiles/definitions/gameserver-wine.yaml "$tmp" gameserver-wine
+          jq -e '.product == "gameserver" and .release == "trixie-wine" and .os == "Debian"' "$tmp/registry.json"
+
       - name: Download icon
         run: wget -O icon.png "https://raw.githubusercontent.com/mfleming1290/mos-hub/main/images/distrobuilderIcon.png"
 
@@ -41,7 +55,7 @@ jobs:
         working-directory: page
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.VERSION }}
-        run: npm install && npm run build
+        run: npm ci --no-audit --no-fund && npm run build
 
       - name: Build plugin deb
         shell: bash
@@ -70,7 +84,8 @@ jobs:
           cp "$PKG_DIR/var/www/mos-plugins/distrobuilder/style.css"              "$PKG_DIR/var/www/mos-plugins/distrobuilder/style-C7dZlxPF.css"
 
           cp distrobuilder "$PKG_DIR/usr/bin/plugins/distrobuilder"
-          chmod 0755 "$PKG_DIR/usr/bin/plugins/distrobuilder"
+          cp provision-lxc.py "$PKG_DIR/usr/bin/plugins/distrobuilder-provision"
+          chmod 0755 "$PKG_DIR/usr/bin/plugins/distrobuilder" "$PKG_DIR/usr/bin/plugins/distrobuilder-provision"
           cp icon.png "$PKG_DIR/var/www/mos-plugins/distrobuilder/"
 
           cat > "$PKG_DIR/DEBIAN/control" <<CONTROL

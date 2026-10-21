@@ -49,9 +49,12 @@ _ensure_dirs() {
 
 _seed_default_template() {
   _ensure_dirs || return 1
-  if [ -f "$DEFAULT_DEFINITION" ] && [ ! -f "$TEMPLATE_DIR/gameserver.yaml" ]; then
-    cp -f "$DEFAULT_DEFINITION" "$TEMPLATE_DIR/gameserver.yaml"
-  fi
+  local bundled destination
+  for bundled in "$STATIC_DIR"/definitions/*.yaml; do
+    [ -f "$bundled" ] || continue
+    destination="$TEMPLATE_DIR/$(basename "$bundled")"
+    [ -f "$destination" ] || cp "$bundled" "$destination"
+  done
 }
 
 _sync_builtin_template() {
@@ -59,6 +62,8 @@ _sync_builtin_template() {
   if [ -f "$DEFAULT_DEFINITION" ]; then
     cp -f "$DEFAULT_DEFINITION" "$TEMPLATE_DIR/gameserver.yaml"
   fi
+  # Ship new built-in releases without overwriting locally edited templates.
+  _seed_default_template
 }
 
 _require_binary() {
@@ -224,6 +229,14 @@ _write_registry_manifest() {
     debian)    product="${product%-debian}" ;;
     ubuntu)    product="${product%-ubuntu}" ;;
   esac
+
+  # Comments are ignored by Distrobuilder, but allow a template built from
+  # Debian trixie to publish as gameserver/trixie-wine in SimpleStreams.
+  local product_override release_override
+  product_override="$(sed -nE 's/^# mos-registry-product: ([a-z][a-z0-9-]*)$/\1/p' "$def" | head -n 1)"
+  release_override="$(sed -nE 's/^# mos-registry-release: ([a-z][a-z0-9-]*)$/\1/p' "$def" | head -n 1)"
+  [ -z "$product_override" ] || product="$product_override"
+  [ -z "$release_override" ] || release="$release_override"
 
   aliases="$product/$release/default,$product/$release"
   if [ "$stem" = "$product" ]; then
