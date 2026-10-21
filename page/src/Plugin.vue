@@ -175,6 +175,14 @@ watch(provision, () => {
 }, { deep: true });
 
 const imageKey = (image) => [image.product, image.release, image.arch, image.variant].join(':');
+function encodeProvisionPayload(payload) {
+  // MOS plugin-query arguments reject JSON punctuation. Base64url carries
+  // the exact UTF-8 payload using only query-safe characters.
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
 function provisionPayload() {
   const selected = provisionInfo.images.find((entry) => imageKey(entry) === provision.image_key);
   if (!selected) throw new Error('Select a completed published image.');
@@ -224,7 +232,7 @@ async function previewProvision() {
   provisionFailed.value = false;
   provisionPlan.value = null;
   try {
-    const body = await queryController(['provision_plan', JSON.stringify(provisionPayload())], 25, true);
+    const body = await queryController(['provision_plan', encodeProvisionPayload(provisionPayload())], 25, true);
     if (!body?.output?.config_append) throw new Error('Controller did not return a plan.');
     provisionPlan.value = body.output;
     provisionMessage.value = 'Plan validated; review the config and confirm the router reservation.';
@@ -241,7 +249,7 @@ async function createProvision() {
   provisionFailed.value = false;
   try {
     const payload = { ...provisionPayload(), confirm_ip_reserved: true };
-    const body = await queryController(['provision_create', JSON.stringify(payload)], 600, true);
+    const body = await queryController(['provision_create', encodeProvisionPayload(payload)], 600, true);
     if (!body?.output?.created) throw new Error('Create returned no success confirmation.');
     provisionMessage.value = `Created ${body.output.name} at ${body.output.ip}.`;
     provisionPlan.value = null;

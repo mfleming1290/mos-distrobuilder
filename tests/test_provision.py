@@ -60,6 +60,21 @@ class ProvisionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "ipvlan"):
                 provision.plan(BASE)
 
+    def test_encoded_query_payload_decodes(self):
+        import base64
+        import json
+        import io
+        from contextlib import redirect_stdout
+        encoded = base64.urlsafe_b64encode(json.dumps(BASE).encode()).decode().rstrip("=")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            provision.main(["provision-lxc.py", "plan", encoded])
+        self.assertEqual(json.loads(output.getvalue())["name"], "palworld")
+
+    def test_encoded_query_payload_rejects_punctuation(self):
+        with self.assertRaisesRegex(ValueError, "Invalid encoded"):
+            provision.main(["provision-lxc.py", "plan", '{"name":"bad"}'])
+
     def test_invalid_name_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "lowercase"):
             provision.plan({**BASE, "name": "../bad"})

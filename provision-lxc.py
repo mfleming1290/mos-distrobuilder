@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """MOS LXC provisioner: strict dry-run plans, then guarded create."""
+import base64
+import binascii
 import hashlib
 import ipaddress
 import json
@@ -293,7 +295,15 @@ def main(args):
         return
     if len(args) != 3 or args[1] not in ("plan", "create"):
         raise ValueError("Usage: provision-lxc.py info | plan JSON | create JSON")
-    payload = json.loads(args[2])
+    encoded = args[2]
+    if len(encoded) > 16384 or not re.fullmatch(r"[A-Za-z0-9_-]+", encoded):
+        raise ValueError("Invalid encoded provisioning payload")
+    try:
+        decoded = base64.b64decode(encoded.translate(str.maketrans("-_", "+/"))
+                                   + "=" * (-len(encoded) % 4), validate=True)
+        payload = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeError, binascii.Error) as exc:
+        raise ValueError("Malformed provisioning payload") from exc
     print(json.dumps(plan(payload) if args[1] == "plan" else create(payload)))
 
 
