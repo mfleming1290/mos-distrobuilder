@@ -210,8 +210,7 @@ def plan(p):
         f"lxc.net.0.ipv4.address = {addr}",
         f"lxc.net.0.ipv4.gateway = {gateway}",
         f"lxc.start.auto = {int(auto)}",
-        f"lxc.mount.entry = {root} srv/gameserver none bind,ro,create=dir 0 0",
-        f"lxc.mount.entry = {root / name} srv/gameserver/{name} none bind,create=dir 0 0",
+        f"lxc.mount.entry = {root} srv/gameserver none bind,create=dir 0 0",
     ]
     if binary:
         config.append(f"lxc.mount.entry = {binary} home/steam/.local/bin none bind,ro,create=dir 0 0")
@@ -228,7 +227,7 @@ def plan(p):
         "warnings": [
             "Reserve the IP in your router; local checks cannot detect every silent device.",
             "A privileged LXC is used to match the existing gameserver image.",
-            "The shared catalogue is read-only; only this game's directory is writable.",
+            "The entire shared catalogue is writable by this privileged LXC; protect other games with backups.",
         ],
     }
 

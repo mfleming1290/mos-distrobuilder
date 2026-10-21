@@ -35,14 +35,15 @@ class ProvisionTests(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
 
-    def test_plan_renders_isolated_mount_and_static_ip(self):
+    def test_plan_renders_shared_writable_mount_and_static_ip(self):
         result = provision.plan(BASE)
         self.assertIn("lxc.net.0.ipv4.address = 192.168.50.96/24",
                       result["config_append"])
         self.assertIn("lxc.start.auto = 1", result["config_append"])
-        self.assertIn("srv/gameserver none bind,ro", result["config_append"])
-        self.assertIn("srv/gameserver/palworld none bind,create=dir",
-                      result["config_append"])
+        self.assertIn("srv/gameserver none bind,create=dir", result["config_append"])
+        self.assertNotIn("srv/gameserver none bind,ro", result["config_append"])
+        self.assertNotIn("srv/gameserver/palworld none bind", result["config_append"])
+        self.assertEqual(1, result["config_append"].count("srv/gameserver none bind"))
         self.assertEqual("192.168.50.1", result["dns"])
         self.assertFalse(result["start"])
 

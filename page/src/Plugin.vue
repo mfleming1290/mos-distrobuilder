@@ -118,7 +118,7 @@
           <button class="primary" :disabled="provisionBusy || !confirmReservation" @click="createProvision">Create LXC from this plan</button>
         </div>
       </template>
-      <p class="hint">Other containers and existing game data are not deleted. The shared catalogue mounts read-only with this game's directory writable.</p>
+      <p class="hint">Other containers and existing game data are not deleted. The entire shared catalogue is writable by this LXC; keep backups of other game data.</p>
     </div>
   </div>
 </template>

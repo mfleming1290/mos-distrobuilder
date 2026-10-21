@@ -88,10 +88,12 @@ completed local build *without using the MOS create dialog*.
    gateway, bootstrap DNS, existing gameserver catalogue root and binary folder.
 4. Preview the generated `lxc-create` command and LXC config.
 5. Reserve the IP in your router and confirm it in the UI, then create.
-6. The guest is created with static macvlan networking, read-only shared
-   game catalogue, its **own writable** subdirectory, optional read-only binary
-   mount and Tailscale TUN. Autostart and immediate start are independently
-   configurable.
+6. The guest is created with static macvlan networking, one shared
+   **read-write** game catalogue mount at /srv/gameserver, an optional read-only
+   binary mount and Tailscale TUN. The provisioner also creates the game's
+   directory under the catalogue with UID/GID 1000 ownership. Autostart and
+   immediate start are independently configurable. All privileged LXCs with
+   this mount can modify other games' files; maintain independent backups.
 
 The controller's Python helper is packaged as
 `/usr/bin/plugins/distrobuilder-provision`, and it exposes
