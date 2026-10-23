@@ -79,8 +79,12 @@ authentication are supplied later by Flow/manual setup.
 
 ## LXC Provisioning (new in 0.1.11)
 
-The plugin's new **LXC Provisioning** panel creates a container from a
-completed local build *without using the MOS create dialog*.
+The plugin's **LXC Provisioning** panel creates a container from a
+completed local image build *without using the MOS create dialog*. It uses
+`lxc-create -t local -- --metadata ... --fstree ...` with the build's
+`meta.tar.xz` and `rootfs.tar.xz`. The separate MOS SimpleStreams registry
+does not necessarily advertise images built on apps; no registry download
+is needed when the archives already exist on the provisioning host.
 
 1. Build `gameserver.yaml` or `gameserver-wine.yaml` using the image builder.
 2. Open LXC Provisioning and refresh the published images and physical NICs.
@@ -98,6 +102,28 @@ completed local build *without using the MOS create dialog*.
 The controller's Python helper is packaged as
 `/usr/bin/plugins/distrobuilder-provision`, and it exposes
 `info`, `plan`, and `create` to the existing MOS plugin query API.
+
+### Background image and LXC jobs (0.1.14)
+
+Long-running **Build Image** and **Create LXC** operations now submit an
+asynchronous job, returning an ID immediately. The **Build & Provisioning
+Jobs** panel displays the active job's stage and recent log output; it
+refreshes while the page is open and restores recent history after a reload.
+The status indicator is intentionally indeterminate, not a guessed
+completion percentage.
+
+Job metadata and output are stored under the configured persistent
+`log_dir/jobs/<job-id>/`. The full build and `lxc-create` output is
+preserved even after a browser disconnect. Completed builds are checked
+for rootfs, metadata, and the registry manifest. Provisioning completion
+checks the generated LXC configuration. A failed or interrupted creation
+may leave partial LXC state, which must be inspected before retrying.
+
+The job supervisor serializes submissions and rejects duplicate active
+image builds or concurrent creation of the same named LXC. The build worker
+loads the installed plugin's **versioned functions** and keeps its selected
+template fixed for the duration of the job. Existing containers and game
+data are not deleted.
 
 **Preflight is non-destructive.** It rejects existing LXC names,
 nonexistent mount roots, invalid NIC/IP/gateway, unknown local image builds,

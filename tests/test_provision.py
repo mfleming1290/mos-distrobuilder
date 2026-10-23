@@ -27,6 +27,9 @@ class ProvisionTests(unittest.TestCase):
             patch.object(provision, "interfaces", return_value=[
                 {"name": "eth0", "mac": "aa:bb:cc:dd:ee:ff", "up": True}]),
             patch.object(provision, "images", return_value=[IMAGE]),
+            patch.object(provision, "local_image_archives", return_value=(
+                Path("/mnt/data/distrobuilder/builds/test/meta.tar.xz"),
+                Path("/mnt/data/distrobuilder/builds/test/rootfs.tar.xz"))),
             patch.object(provision, "checked_dir",
                          side_effect=lambda _path, _label: Path("/mnt/data/gameservers")),
             patch.object(provision, "conflicts", return_value=[]),
@@ -46,6 +49,10 @@ class ProvisionTests(unittest.TestCase):
         self.assertEqual(1, result["config_append"].count("srv/gameserver none bind"))
         self.assertEqual("192.168.50.1", result["dns"])
         self.assertFalse(result["start"])
+        self.assertEqual(result["create_argv"][4], "local")
+        self.assertIn("--metadata", result["create_argv"])
+        self.assertIn("--fstree", result["create_argv"])
+        self.assertNotIn("--server", result["create_argv"])
 
     def test_no_existing_name_reuse(self):
         (Path(self.directory.name) / "palworld").mkdir()

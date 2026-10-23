@@ -75,7 +75,9 @@ _require_binary() {
 
 _resolve_template() {
   _ensure_dirs || return 1
-  local requested="$SELECTED_TEMPLATE"
+  # Background build jobs pin the submitted template, even if a different
+  # template is selected in MOS while the job is running.
+  local requested="${DISTROBUILDER_TEMPLATE_OVERRIDE:-$SELECTED_TEMPLATE}"
   [ -n "$requested" ] || requested="gameserver.yaml"
 
   local safe

@@ -6,6 +6,7 @@ BIN_DIR="$PLG_DIR/bin"
 BIN_FILE="$BIN_DIR/distrobuilder"
 RUNTIME_BIN="/usr/bin/distrobuilder-real"
 PROVISIONER="/usr/bin/plugins/distrobuilder-provision"
+JOBS="/usr/bin/plugins/distrobuilder-jobs"
 LOCAL_MANIFEST="$BIN_DIR/distrobuilder.json"
 SETTINGS_FILE="$PLG_DIR/settings.json"
 MANIFEST_URL="https://raw.githubusercontent.com/mfleming1290/mos-plugin-binaries/main/distrobuilder/3.3.1/linux-amd64/distrobuilder.json"
@@ -135,6 +136,20 @@ case "${1:-}" in
   provision_create)
     [ "$#" -eq 2 ] || fail "Expected one JSON provision payload."
     exec python3 "$PROVISIONER" create "$2"
+    ;;
+  job_submit_provision)
+    [ "$#" -eq 2 ] || fail "Expected encoded payload"
+    exec python3 "$JOBS" submit-provision "$2"
+    ;;
+  job_submit_build)
+    exec python3 "$JOBS" submit-build none
+    ;;
+  job_status)
+    [ "$#" -eq 2 ] || fail "Expected job ID"
+    exec python3 "$JOBS" status "$2"
+    ;;
+  job_list)
+    exec python3 "$JOBS" list
     ;;
   *)
     echo "Usage: distrobuilder {install_binary|repair_binary|status|list_templates|provision_info|provision_plan|provision_create}" >&2

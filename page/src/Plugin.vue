@@ -75,11 +75,29 @@
     </div>
 
     <div class="card">
+      <div class="card-head">
+        <h2>Build & Provisioning Jobs</h2>
+        <button :disabled="jobBusy" @click="loadRecentJobs">Refresh history</button>
+      </div>
+      <p class="muted">Builds and LXC creation run independently of the browser. Status and logs survive a page refresh.</p>
+      <template v-if="job">
+        <p><strong>{{ job.title }}</strong> — {{ job.state }} · {{ job.stage }}</p>
+        <div v-if="job.state === 'queued' || job.state === 'running'" class="job-track"><div class="job-motion"></div></div>
+        <p class="hint">Job ID: <code>{{ job.id }}</code></p>
+        <pre class="config-preview">{{ job.log_tail || 'Log pending...' }}</pre>
+      </template>
+      <p v-else class="hint">No jobs recorded yet.</p>
+      <div v-if="recentJobs.length" class="job-history">
+        <button v-for="item in recentJobs" :key="item.id" @click="refreshJob(item.id)">{{ item.target }} · {{ item.state }}</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>LXC Provisioning</h2>
       <p class="muted">Create an LXC from a completed registry image with a dedicated IP, shared binaries, persistent catalogue, and Tailscale TUN. Nothing is created during Preview.</p>
       <div class="form-grid">
         <label><span>Container name</span><input v-model.trim="provision.name" placeholder="palworld" autocomplete="off" /></label>
-        <label><span>Published image</span>
+        <label><span>Local image build</span>
           <select v-model="provision.image_key">
             <option value="" disabled>Select a published build</option>
             <option v-for="image in provisionInfo.images" :key="imageKey(image)" :value="imageKey(image)">{{ image.product }}/{{ image.release }} ({{ image.arch }})</option>
@@ -94,7 +112,6 @@
         <label><span>Dedicated IPv4 / CIDR</span><input v-model.trim="provision.ip" placeholder="192.168.50.97/24" /></label>
         <label><span>Gateway</span><input v-model.trim="provision.gateway" /></label>
         <label><span>Bootstrap DNS</span><input v-model.trim="provision.dns" /></label>
-        <label><span>Registry hostname</span><input v-model.trim="provision.registry" /></label>
         <label><span>Host game catalogue</span><input v-model.trim="provision.game_root" /></label>
         <label><span>Host shared binaries</span><input v-model.trim="provision.binary_dir" :disabled="!provision.mount_binaries" /></label>
       </div>
@@ -124,7 +141,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 const PLUGIN_NAME = 'distrobuilder';
 
@@ -142,6 +159,11 @@ const binaryFailed = ref(false);
 const storageBusy = ref(false);
 const storageMessage = ref('');
 const storageFailed = ref(false);
+
+const job = ref(null);
+const recentJobs = ref([]);
+const jobBusy = ref(false);
+let jobPoller = null;
 
 const templatesBusy = ref(false);
 const templates = ref([]);
@@ -218,7 +240,7 @@ async function loadProvisionInfo() {
       provision.nic = '';
     }
     provisionMessage.value = provisionInfo.images.length
-      ? 'Published image and physical interface inventory loaded.'
+      ? 'Local image builds and physical interface inventory loaded.'
       : 'No completed local image builds. Build an image above first.';
   } catch (err) {
     provisionFailed.value = true;
@@ -249,11 +271,12 @@ async function createProvision() {
   provisionFailed.value = false;
   try {
     const payload = { ...provisionPayload(), confirm_ip_reserved: true };
-    const body = await queryController(['provision_create', encodeProvisionPayload(payload)], 600, true);
-    if (!body?.output?.created) throw new Error('Create returned no success confirmation.');
-    provisionMessage.value = `Created ${body.output.name} at ${body.output.ip}.`;
+    const body = await queryController(['job_submit_provision', encodeProvisionPayload(payload)], 30, true);
+    if (!body?.output?.accepted || !body?.output?.id) throw new Error('No job acceptance was returned.');
+    provisionMessage.value = `Provisioning started: ${body.output.id}`;
     provisionPlan.value = null;
     confirmReservation.value = false;
+    await refreshJob(body.output.id);
   } catch (err) {
     provisionFailed.value = true;
     provisionMessage.value = `Creation failed or could not be confirmed: ${err.message}. Check the LXC inventory before retrying.`;
@@ -440,16 +463,38 @@ async function validateSelected() {
 async function buildSelected() {
   busy.value = true;
   failed.value = false;
-  message.value = `Building ${settings.selected_template}...`;
+  message.value = `Starting ${settings.selected_template}...`;
   try {
     await saveSettings();
-    await runFunction('build_selected');
-    message.value = `Build completed. Artifacts were written to ${settings.build_dir}.`;
+    const body = await queryController(['job_submit_build'], 30, true);
+    if (!body?.output?.accepted || !body?.output?.id) throw new Error('Build was not accepted.');
+    message.value = `Build started: ${body.output.id}`;
+    await refreshJob(body.output.id);
   } catch (err) {
     failed.value = true;
-    message.value = `Build failed: ${err.message}`;
+    message.value = `Could not start build: ${err.message}`;
   } finally {
     busy.value = false;
+  }
+}
+
+async function refreshJob(id = job.value?.id) {
+  if (!id || jobBusy.value) return;
+  jobBusy.value = true;
+  try {
+    const body = await queryController(['job_status', id], 15, true);
+    if (!body?.output?.id) throw new Error('No job status returned.');
+    job.value = body.output;
+  } finally {
+    jobBusy.value = false;
+  }
+}
+
+async function loadRecentJobs() {
+  const body = await queryController(['job_list'], 15, true);
+  recentJobs.value = Array.isArray(body?.output) ? body.output : [];
+  if (!job.value && recentJobs.value.length) {
+    await refreshJob(recentJobs.value[0].id);
   }
 }
 
@@ -460,7 +505,14 @@ onMounted(async () => {
   } catch (_) {}
   await loadTemplates();
   await loadProvisionInfo();
+  await loadRecentJobs().catch(() => {});
+  jobPoller = setInterval(() => {
+    if (job.value?.id && ['queued', 'running'].includes(job.value.state)) {
+      refreshJob().catch(() => {});
+    }
+  }, 3000);
 });
+onUnmounted(() => { if (jobPoller) clearInterval(jobPoller); });
 </script>
 
 <style scoped>
@@ -528,6 +580,10 @@ select {
 .template-select { min-width: 0; }
 .template-row button { height: 42px; }
 code { word-break: break-all; }
+.job-track { height: 8px; border-radius: 999px; background: rgba(128,128,128,.2); overflow: hidden; margin-top: 12px; }
+.job-motion { width: 35%; height: 100%; background: #4c93ce; animation: progress-slide 1.7s ease-in-out infinite alternate; }
+@keyframes progress-slide { from { transform: translateX(0); } to { transform: translateX(185%); } }
+.job-history { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .config-preview { padding: 12px; border-radius: 8px; background: rgba(128,128,128,.12); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; max-height: 350px; overflow: auto; }
 .provision-options { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin-top: 18px; }
 .provision-options label, .reservation-confirm { display: flex; gap: 8px; align-items: center; font-weight: 500; }

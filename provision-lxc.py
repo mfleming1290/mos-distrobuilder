@@ -75,6 +75,36 @@ def images():
     return sorted(discovered.values(), key=lambda x: (x["product"], x["release"]))
 
 
+def local_image_archives(image):
+    """Pick the newest complete local build for the selected image.
+
+    A build on apps is not necessarily published by the separate MOS
+    SimpleStreams registry. Use LXC's native local template instead.
+    """
+    base = Path(settings().get("build_dir") or "/mnt/user/@storage/distrobuilder/builds")
+    candidates = []
+    if base.is_dir():
+        for folder in base.iterdir():
+            if not folder.is_dir() or folder.is_symlink():
+                continue
+            registry = folder / "registry.json"
+            rootfs = folder / "rootfs.tar.xz"
+            metadata = folder / "meta.tar.xz"
+            if not all(path.is_file() and path.stat().st_size > 0
+                       for path in (registry, rootfs, metadata)):
+                continue
+            try:
+                manifest = json.loads(registry.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if all(manifest.get(key) == value for key, value in image.items()):
+                candidates.append((folder.stat().st_mtime, folder.name, metadata, rootfs))
+    if not candidates:
+        raise ValueError("No complete local archives found for selected image")
+    _, _, metadata, rootfs = max(candidates)
+    return metadata, rootfs
+
+
 def defaults():
     return {
         "registry": REGISTRY, "gateway": "192.168.50.1",
@@ -187,6 +217,7 @@ def plan(p):
     image = {"product": product, "release": release, "arch": "amd64", "variant": "default"}
     if image not in images():
         raise ValueError("Image not among completed local registry builds: " + product + "/" + release)
+    metadata, rootfs = local_image_archives(image)
     root = checked_dir(p.get("game_root", defaults()["game_root"]), "Game catalogue")
     binary = checked_dir(p.get("binary_dir", defaults()["binary_dir"]), "Binary folder") \
         if flag(p, "mount_binaries", True) else None
@@ -222,8 +253,8 @@ def plan(p):
         "name": name, "image": image, "nic": nic, "ip": str(addr),
         "gateway": str(gateway), "dns": str(dns), "mac": mac, "game_directory": str(root / name),
         "autostart": auto, "start": start, "config_append": "\n".join(config) + "\n",
-        "create_argv": ["lxc-create", "-n", name, "-t", "download", "--", "--server",
-                        registry, "--dist", product, "--release", release, "--arch", "amd64"],
+        "create_argv": ["lxc-create", "-n", name, "-t", "local", "--",
+                        "--metadata", str(metadata), "--fstree", str(rootfs)],
         "warnings": [
             "Reserve the IP in your router; local checks cannot detect every silent device.",
             "A privileged LXC is used to match the existing gameserver image.",

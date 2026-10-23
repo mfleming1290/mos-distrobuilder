@@ -9,7 +9,7 @@ on:
       version:
         description: 'Plugin version'
         required: true
-        default: '0.1.13'
+        default: '0.1.14'
 
 jobs:
   build:
@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -v
-          python3 -m py_compile provision-lxc.py
+          python3 -m py_compile provision-lxc.py distrobuilder-jobs.py
           bash -n functions
           bash -n distrobuilder
           source functions
@@ -85,7 +85,8 @@ jobs:
 
           cp distrobuilder "$PKG_DIR/usr/bin/plugins/distrobuilder"
           cp provision-lxc.py "$PKG_DIR/usr/bin/plugins/distrobuilder-provision"
-          chmod 0755 "$PKG_DIR/usr/bin/plugins/distrobuilder" "$PKG_DIR/usr/bin/plugins/distrobuilder-provision"
+          cp distrobuilder-jobs.py "$PKG_DIR/usr/bin/plugins/distrobuilder-jobs"
+          chmod 0755 "$PKG_DIR/usr/bin/plugins/distrobuilder" "$PKG_DIR/usr/bin/plugins/distrobuilder-provision" "$PKG_DIR/usr/bin/plugins/distrobuilder-jobs"
           cp icon.png "$PKG_DIR/var/www/mos-plugins/distrobuilder/"
 
           cat > "$PKG_DIR/DEBIAN/control" <<CONTROL
